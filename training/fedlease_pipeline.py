@@ -182,12 +182,22 @@ class FedLEASEPipeline:
         client_uploads: List[Tuple] = []
         client_stats: List[Dict] = []
 
-        # Anneal Gumbel-softmax temperature across rounds:
-        # T = 1.0 (round 0) → 0.1 (last round). High temperature early gives
-        # smooth exploration; low temperature late gives sharp specialisation.
+        # Anneal Gumbel-softmax temperature across rounds.
+        # Gumbel noise is only useful AFTER the router has a basic shape.
+        # For the first 30% of rounds we keep plain softmax (use_gumbel=False)
+        # and a high temperature; then we switch on Gumbel and anneal
+        # T: 1.0 → 0.1. This avoids the unstable noisy-router regime early on.
         total_rounds = max(self.num_rounds, 1)
-        t_frac = round_t / max(total_rounds - 1, 1)
-        router_temp = 1.0 * (1.0 - t_frac) + 0.1 * t_frac
+        warmup_router_rounds = max(1, total_rounds // 3)
+        if round_t < warmup_router_rounds:
+            router_temp = 1.0
+            use_gumbel = False
+        else:
+            t_frac = (round_t - warmup_router_rounds) / max(
+                total_rounds - warmup_router_rounds - 1, 1
+            )
+            router_temp = 1.0 * (1.0 - t_frac) + 0.1 * t_frac
+            use_gumbel = True
 
         for cid, client in self.clients.items():
             # Server broadcasts to this client
@@ -201,12 +211,13 @@ class FedLEASEPipeline:
                 assigned_expert_idx=payload["assigned_expert_idx"],
             )
 
-            # Anneal router temperatures in this client's model
+            # Configure router temperature + Gumbel mode for this round
             try:
                 from models.adaptive_router import AdaptiveTopMRouter
                 for m in client.fedlease_model.modules():
                     if isinstance(m, AdaptiveTopMRouter):
                         m.anneal_temperature(router_temp)
+                        m.use_gumbel = use_gumbel
             except Exception:
                 pass
 

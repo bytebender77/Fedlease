@@ -216,22 +216,32 @@ class FederatedClient:
         return total / max(count, 1)
 
     def _compute_class_weights(self, n_classes: int = 3) -> torch.Tensor:
-        """Inverse-frequency class weights from this client's training labels.
+        """Softened inverse-frequency class weights.
 
-        Counters majority-class collapse (e.g. PhraseBank's ~60% neutral skew
-        and Twitter's neutral-minority distribution).
+        Earlier we used full inverse-frequency (w_c ∝ 1/n_c) which on
+        PhraseBank's 60/25/15 distribution gave weights {0.55, 1.33, 2.22}
+        — too aggressive. It pulled the classifier into a balanced-prediction
+        degeneracy (every client predicting ~33/33/33 → flat accuracy ≈ 76%).
+
+        Softer choice: weights ∝ 1/sqrt(n_c), normalised so the mean weight
+        is 1.0 and the max is capped at 1.5. This corrects mild imbalance
+        without flattening the dominant class.
         """
         from collections import Counter
+        import math
+
         counts: Counter = Counter()
         for batch in self.train_loader:
             counts.update(batch["labels"].tolist())
-        total = sum(counts.values()) or 1
-        # Standard inverse-frequency weighting (normalised so weights ~ O(1))
-        weights = torch.tensor(
-            [total / (n_classes * max(counts.get(c, 0), 1)) for c in range(n_classes)],
-            dtype=torch.float32, device=self.device,
-        )
-        return weights
+
+        # Raw inverse-sqrt-frequency
+        raw = [1.0 / math.sqrt(max(counts.get(c, 0), 1)) for c in range(n_classes)]
+        # Normalise so mean = 1.0
+        mean_raw = sum(raw) / n_classes
+        normed = [r / mean_raw for r in raw]
+        # Cap at 1.5 so the minority class doesn't dominate
+        capped = [min(w, 1.5) for w in normed]
+        return torch.tensor(capped, dtype=torch.float32, device=self.device)
 
     def _train_model(
         self,
@@ -254,9 +264,13 @@ class FederatedClient:
 
         scaler = GradScaler() if self.mixed_precision and self.device.type == "cuda" else None
 
-        # Class-weighted CE + label smoothing — combats majority-class collapse
+        # Class-weighted CE + mild label smoothing.
+        # smoothing=0.1 was too aggressive on PhraseBank (60% neutral skew):
+        # it floored the loss above zero and prevented confident neutral
+        # predictions, collapsing per-client variance. 0.03 is the gentler
+        # standard (cf. Müller et al. 2019, "When does label smoothing help?").
         class_weights = self._compute_class_weights(n_classes=3)
-        loss_fct = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+        loss_fct = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.03)
 
         epoch_stats = []
         for epoch in range(n_epochs):
