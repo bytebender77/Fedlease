@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from clustering.similarity import compute_distance_matrix
+from clustering.similarity import compute_distance_matrix, compute_distance_matrix_from_ab
 from clustering.expert_allocation import ExpertAllocator
 from federated.aggregation import cluster_wise_aggregation
 from utils.logging_utils import get_logger
@@ -108,12 +108,21 @@ class FederatedServer:
         N = len(client_ids)
 
         # --- 1. Build ordered list of B matrices ---
-        ordered_b = [client_b_matrices[cid] for cid in client_ids]
+        ordered_b  = [client_b_matrices[cid]  for cid in client_ids]
+        ordered_ab = [client_ab_matrices[cid] for cid in client_ids]
 
         # --- 2. Compute distance matrix ---
+        # Use B@A rather than B alone — gives a much stronger silhouette signal
+        # because the update direction is captured rather than just the output
+        # projection (which stays near zero for short warmup).
         t0 = time.time()
-        dist_matrix = compute_distance_matrix(ordered_b)
-        logger.info(f"Distance matrix computed in {time.time() - t0:.2f}s")
+        try:
+            dist_matrix = compute_distance_matrix_from_ab(ordered_ab)
+            logger.info(f"Distance matrix (B@A) computed in {time.time() - t0:.2f}s")
+        except Exception as exc:
+            logger.warning(f"B@A distance failed ({exc}); falling back to B-only")
+            dist_matrix = compute_distance_matrix(ordered_b)
+            logger.info(f"Distance matrix (B-only) computed in {time.time() - t0:.2f}s")
 
         # --- 3. Find optimal M via silhouette ---
         optimal_k, labels, scores = self.allocator.allocate(dist_matrix, client_ids)

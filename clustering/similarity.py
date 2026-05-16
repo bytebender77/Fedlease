@@ -83,6 +83,64 @@ def compute_distance_matrix(
     return dist
 
 
+def compute_distance_matrix_from_ab(
+    client_ab_matrices: List[List],
+) -> np.ndarray:
+    """
+    Cluster on the full LoRA update direction (B @ A) rather than B alone.
+
+    Empirically this gives a much stronger silhouette signal — B alone can
+    still be close to zero after short warmup, but B@A captures the input-
+    conditioned update direction that the layer would apply, and is far
+    more discriminative across register classes.
+
+    Parameters
+    ----------
+    client_ab_matrices : List[List[Tuple[Aq, Bq, Av, Bv]]]
+        Per client: list over layers of (A_query, B_query, A_value, B_value).
+
+    Returns
+    -------
+    dist : np.ndarray [N, N]
+    """
+    N = len(client_ab_matrices)
+    # Build the per-layer B@A flattened vectors for each client
+    feats: List[List[torch.Tensor]] = []
+    for ab_list in client_ab_matrices:
+        client_layer_vecs: List[torch.Tensor] = []
+        for entry in ab_list:
+            # entry = (Aq, Bq, Av, Bv) for one layer
+            Aq, Bq, Av, Bv = (t.float().cpu() for t in entry)
+            # B @ A has shape [out, in]; flatten gives the full update direction
+            ba_q = (Bq @ Aq).flatten()
+            ba_v = (Bv @ Av).flatten()
+            # Concatenate query + value update vectors
+            client_layer_vecs.append(torch.cat([ba_q, ba_v], dim=0))
+        feats.append(client_layer_vecs)
+
+    # Normalise per layer per client
+    feats_norm = [
+        [F.normalize(v, dim=0) for v in layer_vecs]
+        for layer_vecs in feats
+    ]
+    L = len(feats_norm[0])
+
+    sim = np.zeros((N, N), dtype=np.float64)
+    for i in range(N):
+        sim[i, i] = 1.0
+        for j in range(i + 1, N):
+            cos_sum = 0.0
+            for l in range(L):
+                cos_sum += torch.dot(feats_norm[i][l], feats_norm[j][l]).item()
+            avg_cos = cos_sum / L
+            sim[i, j] = avg_cos
+            sim[j, i] = avg_cos
+
+    dist = 1.0 - sim
+    np.fill_diagonal(dist, 0.0)
+    return np.clip(dist, 0.0, 2.0)
+
+
 def pairwise_layer_similarities(
     client_b_matrices: List[List[torch.Tensor]],
 ) -> np.ndarray:

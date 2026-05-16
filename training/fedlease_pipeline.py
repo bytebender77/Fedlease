@@ -182,6 +182,13 @@ class FedLEASEPipeline:
         client_uploads: List[Tuple] = []
         client_stats: List[Dict] = []
 
+        # Anneal Gumbel-softmax temperature across rounds:
+        # T = 1.0 (round 0) → 0.1 (last round). High temperature early gives
+        # smooth exploration; low temperature late gives sharp specialisation.
+        total_rounds = max(self.num_rounds, 1)
+        t_frac = round_t / max(total_rounds - 1, 1)
+        router_temp = 1.0 * (1.0 - t_frac) + 0.1 * t_frac
+
         for cid, client in self.clients.items():
             # Server broadcasts to this client
             payload = self.server.broadcast(cid)
@@ -193,6 +200,15 @@ class FedLEASEPipeline:
                 router_state=payload["router_state"],
                 assigned_expert_idx=payload["assigned_expert_idx"],
             )
+
+            # Anneal router temperatures in this client's model
+            try:
+                from models.adaptive_router import AdaptiveTopMRouter
+                for m in client.fedlease_model.modules():
+                    if isinstance(m, AdaptiveTopMRouter):
+                        m.anneal_temperature(router_temp)
+            except Exception:
+                pass
 
             # Client trains locally
             stats = client.local_train(self.local_epochs)

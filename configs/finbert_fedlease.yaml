@@ -19,7 +19,9 @@ federated:
   num_rounds: 25
   local_epochs: 2
   batch_size: 32
-  warmup_epochs: 3
+  # Warmup: bumped 3→5 — short warmup produces near-zero B matrices that
+  # give a weak silhouette signal. 5 epochs lets B@A separate cleanly.
+  warmup_epochs: 5
   # M_max: upper bound on number of experts
   max_experts: 8
   min_experts: 2

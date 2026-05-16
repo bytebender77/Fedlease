@@ -44,12 +44,21 @@ class AdaptiveTopMRouter(nn.Module):
         hidden_dim: int,
         n_experts: int,
         assigned_expert_idx: int,
+        use_gumbel: bool = True,
+        temperature: float = 1.0,
     ) -> None:
         super().__init__()
 
         self.n_experts = n_experts
         self.assigned_expert_idx = assigned_expert_idx
         self.router_dim = 2 * n_experts - 1  # (2M - 1)
+
+        # Differentiable Gumbel-softmax option (vs plain softmax + argmax).
+        # Annealed temperature (high → low) gives smooth exploration early
+        # then sharp specialisation late. Set use_gumbel=False to fall back
+        # to the original paper-faithful softmax routing.
+        self.use_gumbel = use_gumbel
+        self.temperature = temperature
 
         # Trainable router: G ∈ R^{(2M-1) × d}
         self.gate = nn.Linear(hidden_dim, self.router_dim, bias=False)
@@ -60,6 +69,10 @@ class AdaptiveTopMRouter(nn.Module):
         self._other_experts: List[int] = [
             k for k in range(n_experts) if k != assigned_expert_idx
         ]
+
+        # Last-computed full routing distribution, for the load-balancing
+        # auxiliary loss in the model wrapper (set in forward()).
+        self._last_omega: torch.Tensor = None  # type: ignore
 
     # ------------------------------------------------------------------
     # Forward
@@ -86,9 +99,19 @@ class AdaptiveTopMRouter(nn.Module):
         """
         M = self.n_experts
 
-        # ω̂ = softmax(G · x)  shape: [batch, 2M-1]
+        # logits ∈ R^{batch × 2M-1}
         logits = self.gate(hidden)
-        omega = F.softmax(logits, dim=-1)
+
+        if self.use_gumbel and self.training:
+            # Sample Gumbel(0,1) noise and apply temperature
+            # → differentiable end-to-end (paper: Jang et al. 2017)
+            g = -torch.empty_like(logits).exponential_().log()
+            omega = F.softmax((logits + g) / max(self.temperature, 1e-6), dim=-1)
+        else:
+            omega = F.softmax(logits, dim=-1)
+
+        # Cache full distribution for the load-balancing auxiliary loss
+        self._last_omega = omega
 
         # Top-M selection
         top_values, top_indices = torch.topk(omega, M, dim=-1)
@@ -97,6 +120,31 @@ class AdaptiveTopMRouter(nn.Module):
         expert_indices = self._map_to_expert_indices(top_indices)
 
         return top_values, expert_indices
+
+    # ------------------------------------------------------------------
+    # Load-balancing auxiliary loss
+    # ------------------------------------------------------------------
+
+    def load_balance_loss(self) -> torch.Tensor:
+        """Shazeer 2017 "importance" coefficient of variation squared.
+
+        Penalises imbalanced expert use (some experts always picked, others
+        never). Add a small multiple (e.g. 0.01) to the main CE loss.
+
+        Returns 0 if the router has not produced a distribution yet.
+        """
+        if self._last_omega is None:
+            return torch.tensor(0.0, device=self.gate.weight.device)
+        # Importance: mass into each routing slot, summed over batch
+        importance = self._last_omega.sum(dim=0)              # [2M-1]
+        mean = importance.mean()
+        # Coefficient of variation squared = (std/mean)^2
+        cv2 = (importance.float().var(unbiased=False) / (mean.float() ** 2 + 1e-9))
+        return cv2
+
+    def anneal_temperature(self, new_temp: float) -> None:
+        """Reduce temperature for sharper specialisation as training advances."""
+        self.temperature = max(new_temp, 1e-3)
 
     # ------------------------------------------------------------------
     # Routing-index → expert-index mapping

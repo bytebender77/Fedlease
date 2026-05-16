@@ -31,9 +31,9 @@ sys.path.insert(0, REPO_ROOT)
 
 PRESETS = {
     "debug":  dict(num_rounds=3,  local_epochs=1, warmup_epochs=1, batch_size=16, max_experts=4),
-    "quick":  dict(num_rounds=10, local_epochs=1, warmup_epochs=2, batch_size=32, max_experts=6),
-    "medium": dict(num_rounds=15, local_epochs=2, warmup_epochs=3, batch_size=32, max_experts=8),
-    "full":   dict(num_rounds=25, local_epochs=2, warmup_epochs=3, batch_size=32, max_experts=8),
+    "quick":  dict(num_rounds=10, local_epochs=1, warmup_epochs=3, batch_size=32, max_experts=6),
+    "medium": dict(num_rounds=15, local_epochs=2, warmup_epochs=4, batch_size=32, max_experts=8),
+    "full":   dict(num_rounds=25, local_epochs=2, warmup_epochs=5, batch_size=32, max_experts=8),
 }
 
 

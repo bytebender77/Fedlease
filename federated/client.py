@@ -198,6 +198,41 @@ class FederatedClient:
     # Internal training loop
     # ------------------------------------------------------------------
 
+    def _collect_load_balance_loss(self, model: nn.Module) -> torch.Tensor:
+        """Sum load-balancing auxiliary loss across any AdaptiveTopMRouter
+        modules in the model. Returns 0 tensor if no router is present
+        (e.g. during warmup when there's only a single LoRA expert).
+        """
+        try:
+            from models.adaptive_router import AdaptiveTopMRouter
+        except Exception:
+            return torch.tensor(0.0, device=self.device)
+        total = torch.tensor(0.0, device=self.device)
+        count = 0
+        for m in model.modules():
+            if isinstance(m, AdaptiveTopMRouter):
+                total = total + m.load_balance_loss()
+                count += 1
+        return total / max(count, 1)
+
+    def _compute_class_weights(self, n_classes: int = 3) -> torch.Tensor:
+        """Inverse-frequency class weights from this client's training labels.
+
+        Counters majority-class collapse (e.g. PhraseBank's ~60% neutral skew
+        and Twitter's neutral-minority distribution).
+        """
+        from collections import Counter
+        counts: Counter = Counter()
+        for batch in self.train_loader:
+            counts.update(batch["labels"].tolist())
+        total = sum(counts.values()) or 1
+        # Standard inverse-frequency weighting (normalised so weights ~ O(1))
+        weights = torch.tensor(
+            [total / (n_classes * max(counts.get(c, 0), 1)) for c in range(n_classes)],
+            dtype=torch.float32, device=self.device,
+        )
+        return weights
+
     def _train_model(
         self,
         model: nn.Module,
@@ -218,6 +253,10 @@ class FederatedClient:
         )
 
         scaler = GradScaler() if self.mixed_precision and self.device.type == "cuda" else None
+
+        # Class-weighted CE + label smoothing — combats majority-class collapse
+        class_weights = self._compute_class_weights(n_classes=3)
+        loss_fct = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
 
         epoch_stats = []
         for epoch in range(n_epochs):
@@ -241,7 +280,14 @@ class FederatedClient:
                             token_type_ids=token_type_ids,
                             labels=labels,
                         )
-                    scaler.scale(out["loss"]).backward()
+                        logits = out["logits"]
+                        # Override the model's internal CE loss with our
+                        # class-weighted + smoothed loss
+                        ce_loss = loss_fct(logits.float(), labels)
+                        # Add load-balancing auxiliary loss if router exposes it
+                        aux = self._collect_load_balance_loss(model)
+                        loss = ce_loss + 0.01 * aux
+                    scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
                     nn.utils.clip_grad_norm_(trainable_params, self.max_grad_norm)
                     scaler.step(optimizer)
@@ -253,14 +299,18 @@ class FederatedClient:
                         token_type_ids=token_type_ids,
                         labels=labels,
                     )
-                    out["loss"].backward()
+                    logits = out["logits"]
+                    ce_loss = loss_fct(logits, labels)
+                    aux = self._collect_load_balance_loss(model)
+                    loss = ce_loss + 0.01 * aux
+                    loss.backward()
                     nn.utils.clip_grad_norm_(trainable_params, self.max_grad_norm)
                     optimizer.step()
 
                 scheduler.step()
-                total_loss += out["loss"].item()
+                total_loss += loss.item()
 
-                preds = out["logits"].argmax(dim=-1)
+                preds = logits.argmax(dim=-1)
                 n_correct += (preds == labels).sum().item()
                 n_total += labels.size(0)
 
