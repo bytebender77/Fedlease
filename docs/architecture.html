@@ -1,0 +1,1878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FedLEASE-FinBERT · System Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #020617; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; }
+  .container { max-width: 1480px; margin: 0 auto; padding: 32px 28px 64px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+  .title-block h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; color: #f1f5f9; display: flex; align-items: center; gap: 12px; }
+  .title-block .pulse { width: 10px; height: 10px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 12px #22d3ee; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.15); } }
+  .title-block .subtitle { font-size: 11px; color: #94a3b8; margin-top: 6px; letter-spacing: 0.04em; }
+  .meta-tags { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .meta-tag { font-size: 9px; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; color: #cbd5e1; background: rgba(30,41,59,0.4); }
+
+  .toolbar { position: relative; }
+  .toolbar-toggle { background: rgba(30,41,59,0.7); border: 1px solid #334155; color: #cbd5e1; width: 36px; height: 36px; border-radius: 8px; font-size: 18px; cursor: pointer; }
+  .toolbar-toggle:hover { background: rgba(51,65,85,0.9); }
+  .toolbar-actions { display: none; position: absolute; right: 0; top: 44px; background: rgba(15,23,42,0.96); border: 1px solid #334155; border-radius: 8px; padding: 6px; z-index: 10; box-shadow: 0 8px 20px rgba(0,0,0,0.45); }
+  .toolbar.open .toolbar-actions { display: flex; flex-direction: column; gap: 4px; }
+  .toolbar-actions button { background: transparent; border: 0; color: #e2e8f0; padding: 7px 12px; text-align: left; font-family: inherit; font-size: 11px; border-radius: 4px; cursor: pointer; }
+  .toolbar-actions button:hover { background: rgba(51,65,85,0.8); }
+  @media print { .toolbar { display: none !important; } }
+
+  .section { margin-top: 38px; }
+  .section h2 { font-size: 14px; color: #f1f5f9; font-weight: 600; letter-spacing: 0.02em; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+  .section h2 .num { display: inline-flex; width: 26px; height: 26px; border-radius: 6px; background: rgba(34,211,238,0.15); border: 1px solid #22d3ee; color: #22d3ee; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .section .desc { font-size: 11px; color: #94a3b8; margin-bottom: 14px; padding-left: 36px; line-height: 1.6; }
+  .diagram-card { background: rgba(15,23,42,0.55); border: 1px solid #1e293b; border-radius: 12px; padding: 18px; overflow: auto; }
+  svg { display: block; width: 100%; height: auto; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+  .card { background: rgba(15,23,42,0.55); border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
+  .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .card-dot.cyan { background: #22d3ee; box-shadow: 0 0 8px #22d3ee; }
+  .card-dot.violet { background: #a78bfa; box-shadow: 0 0 8px #a78bfa; }
+  .card-dot.amber { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+  .card h3 { font-size: 12px; font-weight: 600; color: #f1f5f9; }
+  .card ul { list-style: none; }
+  .card li { font-size: 10px; color: #cbd5e1; padding: 3px 0; line-height: 1.5; }
+
+  footer { margin-top: 36px; padding-top: 18px; border-top: 1px solid #1e293b; font-size: 10px; color: #64748b; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="container" id="report-container">
+  <header>
+    <div class="title-block">
+      <h1><span class="pulse"></span>FedLEASE-FinBERT · Federated Adaptive LoRA Experts for Financial NLP</h1>
+      <div class="subtitle">System architecture · clustered LoRA-MoE · adaptive top-M routing · cluster-wise FedAvg · ProsusAI/FinBERT backbone</div>
+      <div class="meta-tags">
+        <span class="meta-tag">PyTorch</span>
+        <span class="meta-tag">HuggingFace</span>
+        <span class="meta-tag">LoRA r=4</span>
+        <span class="meta-tag">N=10 clients</span>
+        <span class="meta-tag">T=25 rounds</span>
+        <span class="meta-tag">M_max=8</span>
+        <span class="meta-tag">PhraseBank + Twitter</span>
+      </div>
+    </div>
+    <div class="toolbar" id="toolbar">
+      <button class="toolbar-toggle" onclick="document.getElementById('toolbar').classList.toggle('open')">⋯</button>
+      <div class="toolbar-actions">
+        <button onclick="copyAsImage()">📋 Copy PNG</button>
+        <button onclick="downloadPNG()">🖼️ Download PNG</button>
+        <button onclick="downloadPDF()">📄 Download PDF</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================ DIAGRAM 1: HIGH-LEVEL SYSTEM ARCHITECTURE ============================ -->
+  <section class="section">
+    <h2><span class="num">1</span>High-Level System Architecture</h2>
+    <p class="desc">Two heterogeneous financial-text corpora are partitioned across 10 federated clients. Each client trains a private LoRA-MoE adapter over a frozen FinBERT backbone; only assigned-expert LoRA updates and router gates cross the network. The coordinator hosts five logical engines that drive similarity, clustering, expert allocation, cluster-wise aggregation, and experiment monitoring.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 1000" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid1" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah1" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
+        <marker id="ah1c" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/></marker>
+        <marker id="ah1r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/></marker>
+        <marker id="ah1a" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24"/></marker>
+      </defs>
+      <rect width="1400" height="1000" fill="url(#grid1)"/>
+
+      <!-- arrows (drawn first so they go behind boxes) -->
+      <!-- datasets → clients -->
+      <line x1="400" y1="130" x2="320" y2="195" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah1c)"/>
+      <line x1="1000" y1="130" x2="1080" y2="195" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah1c)"/>
+      <!-- clients ↓ comm channel -->
+      <line x1="700" y1="480" x2="700" y2="520" stroke="#fb7185" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#ah1r)"/>
+      <!-- comm channel ↓ server -->
+      <line x1="700" y1="580" x2="700" y2="620" stroke="#fb7185" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#ah1r)"/>
+      <!-- server internal flow arrows -->
+      <line x1="300" y1="760" x2="340" y2="760" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#ah1a)"/>
+      <line x1="560" y1="760" x2="600" y2="760" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#ah1a)"/>
+      <line x1="820" y1="760" x2="860" y2="760" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#ah1a)"/>
+      <line x1="1080" y1="760" x2="1120" y2="760" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#ah1a)"/>
+
+      <!-- TITLE STRIP -->
+      <text x="700" y="38" text-anchor="middle" fill="#f1f5f9" font-size="14" font-weight="700" letter-spacing="0.05em">FEDLEASE-FINBERT · DISTRIBUTED SYSTEM TOPOLOGY</text>
+      <text x="700" y="55" text-anchor="middle" fill="#64748b" font-size="9">privacy-preserving · communication-efficient · structurally adaptive</text>
+
+      <!-- DATASET LAYER -->
+      <text x="60" y="92" fill="#22d3ee" font-size="10" font-weight="600" letter-spacing="0.1em">LAYER · 1 ▸ DATA SOURCES</text>
+      <rect x="200" y="70" width="400" height="60" rx="6" fill="#0f172a"/>
+      <rect x="200" y="70" width="400" height="60" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="400" y="93" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Financial PhraseBank</text>
+      <text x="400" y="110" text-anchor="middle" fill="#94a3b8" font-size="9">sentences_allagree · 2 264 sentences · analyst prose</text>
+      <text x="400" y="124" text-anchor="middle" fill="#22d3ee" font-size="8">labels: {0:neg, 1:neu, 2:pos}</text>
+
+      <rect x="800" y="70" width="400" height="60" rx="6" fill="#0f172a"/>
+      <rect x="800" y="70" width="400" height="60" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="1000" y="93" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">Twitter Financial News Sentiment</text>
+      <text x="1000" y="110" text-anchor="middle" fill="#94a3b8" font-size="9">zeroshot/twitter-financial-news-sentiment · ~12 000 tweets</text>
+      <text x="1000" y="124" text-anchor="middle" fill="#22d3ee" font-size="8">remap: Bearish→0, Neutral→1, Bullish→2</text>
+
+      <!-- FEDERATED CLIENT TIER -->
+      <text x="60" y="172" fill="#34d399" font-size="10" font-weight="600" letter-spacing="0.1em">LAYER · 2 ▸ FEDERATED CLIENT TIER (N = 10)</text>
+      <rect x="40" y="180" width="1320" height="280" rx="12" fill="none" stroke="#1e293b" stroke-width="1" stroke-dasharray="4,4"/>
+
+      <!-- PhraseBank clients row -->
+      <text x="60" y="208" fill="#22d3ee" font-size="9">▸ cluster A · PhraseBank-register clients (5)</text>
+      <g font-family="JetBrains Mono">
+        <!-- 5 client cards, x = 60, 320, 580, 840, 1100 (width 220 each) -->
+        <g>
+          <rect x="60" y="215" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="60" y="215" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="170" y="234" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C0</text>
+          <text x="170" y="248" text-anchor="middle" fill="#94a3b8" font-size="8">PhraseBank shard · ~317 train</text>
+          <rect x="72" y="258" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/>
+          <text x="115" y="273" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="162" y="258" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/>
+          <text x="215" y="273" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="170" y="297" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen) · q,v LoRA</text>
+          <text x="170" y="309" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 0</text>
+        </g>
+        <g>
+          <rect x="320" y="215" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="320" y="215" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="430" y="234" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C1</text>
+          <text x="430" y="248" text-anchor="middle" fill="#94a3b8" font-size="8">PhraseBank shard</text>
+          <rect x="332" y="258" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="375" y="273" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="422" y="258" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="475" y="273" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="430" y="297" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="430" y="309" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 0</text>
+        </g>
+        <g>
+          <rect x="580" y="215" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="580" y="215" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="690" y="234" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C2</text>
+          <text x="690" y="248" text-anchor="middle" fill="#94a3b8" font-size="8">PhraseBank shard</text>
+          <rect x="592" y="258" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="635" y="273" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="682" y="258" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="735" y="273" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="690" y="297" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="690" y="309" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 0</text>
+        </g>
+        <g>
+          <rect x="840" y="215" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="840" y="215" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="950" y="234" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C3</text>
+          <text x="950" y="248" text-anchor="middle" fill="#94a3b8" font-size="8">PhraseBank shard</text>
+          <rect x="852" y="258" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="895" y="273" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="942" y="258" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="995" y="273" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="950" y="297" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="950" y="309" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 0</text>
+        </g>
+        <g>
+          <rect x="1100" y="215" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="1100" y="215" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="1210" y="234" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C4</text>
+          <text x="1210" y="248" text-anchor="middle" fill="#94a3b8" font-size="8">PhraseBank shard</text>
+          <rect x="1112" y="258" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="1155" y="273" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="1202" y="258" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="1255" y="273" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="1210" y="297" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="1210" y="309" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 0</text>
+        </g>
+      </g>
+
+      <!-- Twitter clients row -->
+      <text x="60" y="338" fill="#22d3ee" font-size="9">▸ cluster B · Twitter-register clients (5)</text>
+      <g font-family="JetBrains Mono">
+        <g>
+          <rect x="60" y="345" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="60" y="345" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="170" y="364" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C5</text>
+          <text x="170" y="378" text-anchor="middle" fill="#94a3b8" font-size="8">Twitter shard · ~1 670 train</text>
+          <rect x="72" y="388" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="115" y="403" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="162" y="388" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="215" y="403" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="170" y="427" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen) · q,v LoRA</text>
+          <text x="170" y="439" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 1</text>
+        </g>
+        <g>
+          <rect x="320" y="345" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="320" y="345" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="430" y="364" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C6</text>
+          <text x="430" y="378" text-anchor="middle" fill="#94a3b8" font-size="8">Twitter shard</text>
+          <rect x="332" y="388" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="375" y="403" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="422" y="388" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="475" y="403" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="430" y="427" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="430" y="439" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 1</text>
+        </g>
+        <g>
+          <rect x="580" y="345" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="580" y="345" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="690" y="364" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C7</text>
+          <text x="690" y="378" text-anchor="middle" fill="#94a3b8" font-size="8">Twitter shard</text>
+          <rect x="592" y="388" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="635" y="403" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="682" y="388" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="735" y="403" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="690" y="427" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="690" y="439" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 1</text>
+        </g>
+        <g>
+          <rect x="840" y="345" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="840" y="345" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="950" y="364" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C8</text>
+          <text x="950" y="378" text-anchor="middle" fill="#94a3b8" font-size="8">Twitter shard</text>
+          <rect x="852" y="388" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="895" y="403" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="942" y="388" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="995" y="403" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="950" y="427" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="950" y="439" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 1</text>
+        </g>
+        <g>
+          <rect x="1100" y="345" width="220" height="100" rx="6" fill="#0f172a"/>
+          <rect x="1100" y="345" width="220" height="100" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+          <text x="1210" y="364" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Client C9</text>
+          <text x="1210" y="378" text-anchor="middle" fill="#94a3b8" font-size="8">Twitter shard</text>
+          <rect x="1112" y="388" width="86" height="22" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1"/><text x="1155" y="403" text-anchor="middle" fill="#c4b5fd" font-size="8">LoRA-MoE</text>
+          <rect x="1202" y="388" width="106" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="1255" y="403" text-anchor="middle" fill="#fda4af" font-size="8">router 2M−1</text>
+          <text x="1210" y="427" text-anchor="middle" fill="#64748b" font-size="8">FinBERT (frozen)</text>
+          <text x="1210" y="439" text-anchor="middle" fill="#34d399" font-size="7">assigned_expert = 1</text>
+        </g>
+      </g>
+
+      <!-- COMMUNICATION CHANNEL -->
+      <rect x="320" y="495" width="760" height="80" rx="10" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="700" y="520" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="600">▼ ENCRYPTED FEDERATED CHANNEL ▼</text>
+      <text x="700" y="538" text-anchor="middle" fill="#fb7185" font-size="9">↑ uploads: assigned-expert (ΔA, ΔB) · router gate G_i · dataset size n_i ≈ 600 KB/round/client</text>
+      <text x="700" y="554" text-anchor="middle" fill="#fb7185" font-size="9">↓ broadcasts: full expert bank {(A_c, B_c)} for c ∈ [M] · classifier head θ_head</text>
+      <text x="700" y="568" text-anchor="middle" fill="#94a3b8" font-size="8">never transmitted: raw text · frozen FinBERT backbone (110M params)</text>
+
+      <!-- SERVER -->
+      <text x="60" y="612" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">LAYER · 3 ▸ COORDINATION SERVER</text>
+      <rect x="40" y="620" width="1320" height="320" rx="14" fill="rgba(120,53,15,0.12)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="8,4"/>
+      <text x="700" y="645" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">FEDERATED COORDINATOR · stateless aggregator + clustering engine</text>
+
+      <!-- 5 server modules in a row -->
+      <g>
+        <rect x="60" y="670" width="240" height="180" rx="8" fill="#0f172a"/>
+        <rect x="60" y="670" width="240" height="180" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="180" y="694" text-anchor="middle" fill="#fef3c7" font-size="12" font-weight="700">① Similarity Engine</text>
+        <line x1="80" y1="704" x2="280" y2="704" stroke="#fbbf24" stroke-width="0.7" opacity="0.5"/>
+        <text x="180" y="724" text-anchor="middle" fill="#e2e8f0" font-size="9">clustering/similarity.py</text>
+        <text x="180" y="744" text-anchor="middle" fill="#94a3b8" font-size="8">flatten B_i^ℓ → cos(B_i, B_j)</text>
+        <text x="180" y="760" text-anchor="middle" fill="#94a3b8" font-size="8">d(i,j) = (1/|L|) Σ_ℓ (1 − cos)</text>
+        <rect x="80" y="774" width="200" height="60" rx="4" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.8"/>
+        <text x="180" y="788" text-anchor="middle" fill="#67e8f9" font-size="8">D ∈ R^{N × N}</text>
+        <text x="180" y="802" text-anchor="middle" fill="#94a3b8" font-size="7">distance matrix</text>
+        <text x="180" y="822" text-anchor="middle" fill="#fbbf24" font-size="7">▸ runs once after warmup</text>
+      </g>
+
+      <g>
+        <rect x="320" y="670" width="240" height="180" rx="8" fill="#0f172a"/>
+        <rect x="320" y="670" width="240" height="180" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="440" y="694" text-anchor="middle" fill="#fef3c7" font-size="12" font-weight="700">② Clustering Engine</text>
+        <line x1="340" y1="704" x2="540" y2="704" stroke="#fbbf24" stroke-width="0.7" opacity="0.5"/>
+        <text x="440" y="724" text-anchor="middle" fill="#e2e8f0" font-size="9">clustering/clustering.py</text>
+        <text x="440" y="744" text-anchor="middle" fill="#94a3b8" font-size="8">scipy agglomerative · average linkage</text>
+        <text x="440" y="760" text-anchor="middle" fill="#94a3b8" font-size="8">sweep k ∈ [M_min, M_max]</text>
+        <rect x="340" y="774" width="200" height="60" rx="4" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="0.8"/>
+        <text x="440" y="788" text-anchor="middle" fill="#ddd6fe" font-size="8">M* = argmax_k S(k)</text>
+        <text x="440" y="802" text-anchor="middle" fill="#94a3b8" font-size="7">silhouette-optimal #experts</text>
+        <text x="440" y="822" text-anchor="middle" fill="#fbbf24" font-size="7">▸ dendrogram + cluster labels</text>
+      </g>
+
+      <g>
+        <rect x="580" y="670" width="240" height="180" rx="8" fill="#0f172a"/>
+        <rect x="580" y="670" width="240" height="180" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="700" y="694" text-anchor="middle" fill="#fef3c7" font-size="12" font-weight="700">③ Expert Allocator</text>
+        <line x1="600" y1="704" x2="800" y2="704" stroke="#fbbf24" stroke-width="0.7" opacity="0.5"/>
+        <text x="700" y="724" text-anchor="middle" fill="#e2e8f0" font-size="9">clustering/expert_allocation.py</text>
+        <text x="700" y="744" text-anchor="middle" fill="#94a3b8" font-size="8">Eq.3 · per-cluster mean</text>
+        <text x="700" y="760" text-anchor="middle" fill="#94a3b8" font-size="8">A_c = avg_{i ∈ C_c} A_i^warmup</text>
+        <rect x="600" y="774" width="200" height="60" rx="4" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/>
+        <text x="700" y="788" text-anchor="middle" fill="#c4b5fd" font-size="8">{(A_c, B_c)}_{c=1..M*}</text>
+        <text x="700" y="802" text-anchor="middle" fill="#94a3b8" font-size="7">global expert bank</text>
+        <text x="700" y="822" text-anchor="middle" fill="#fbbf24" font-size="7">▸ assigns c(i) → client i</text>
+      </g>
+
+      <g>
+        <rect x="840" y="670" width="240" height="180" rx="8" fill="#0f172a"/>
+        <rect x="840" y="670" width="240" height="180" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="960" y="694" text-anchor="middle" fill="#fef3c7" font-size="12" font-weight="700">④ Federated Aggregator</text>
+        <line x1="860" y1="704" x2="1060" y2="704" stroke="#fbbf24" stroke-width="0.7" opacity="0.5"/>
+        <text x="960" y="724" text-anchor="middle" fill="#e2e8f0" font-size="9">federated/aggregation.py</text>
+        <text x="960" y="744" text-anchor="middle" fill="#94a3b8" font-size="8">cluster-wise weighted FedAvg</text>
+        <text x="960" y="760" text-anchor="middle" fill="#94a3b8" font-size="8">A_c ← Σ_{i∈C_c} (n_i/n) · A_i</text>
+        <rect x="860" y="774" width="200" height="60" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="0.8"/>
+        <text x="960" y="788" text-anchor="middle" fill="#6ee7b7" font-size="8">no cross-cluster averaging</text>
+        <text x="960" y="802" text-anchor="middle" fill="#94a3b8" font-size="7">⇒ negative-transfer = 0</text>
+        <text x="960" y="822" text-anchor="middle" fill="#fbbf24" font-size="7">▸ runs every round</text>
+      </g>
+
+      <g>
+        <rect x="1100" y="670" width="240" height="180" rx="8" fill="#0f172a"/>
+        <rect x="1100" y="670" width="240" height="180" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="1220" y="694" text-anchor="middle" fill="#fef3c7" font-size="12" font-weight="700">⑤ Experiment Monitor</text>
+        <line x1="1120" y1="704" x2="1320" y2="704" stroke="#fbbf24" stroke-width="0.7" opacity="0.5"/>
+        <text x="1220" y="724" text-anchor="middle" fill="#e2e8f0" font-size="9">utils/metrics + visualization/</text>
+        <text x="1220" y="744" text-anchor="middle" fill="#94a3b8" font-size="8">acc · macro-F1 · per-class</text>
+        <text x="1220" y="760" text-anchor="middle" fill="#94a3b8" font-size="8">comm bytes · routing entropy</text>
+        <rect x="1120" y="774" width="200" height="60" rx="4" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.8"/>
+        <text x="1220" y="788" text-anchor="middle" fill="#67e8f9" font-size="8">plots / json / checkpoints</text>
+        <text x="1220" y="802" text-anchor="middle" fill="#94a3b8" font-size="7">outputs/results · outputs/plots</text>
+        <text x="1220" y="822" text-anchor="middle" fill="#fbbf24" font-size="7">▸ wandb-ready</text>
+      </g>
+
+      <!-- intra-server pipeline annotation -->
+      <text x="700" y="876" text-anchor="middle" fill="#fbbf24" font-size="9" letter-spacing="0.05em">▸ ① → ② → ③ once at end of warmup · ④ → ⑤ every federated round ▸</text>
+
+      <!-- LEGEND -->
+      <text x="60" y="956" fill="#94a3b8" font-size="9" font-weight="600" letter-spacing="0.1em">LEGEND</text>
+      <g font-size="9" font-family="JetBrains Mono">
+        <rect x="120" y="950" width="10" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee"/><text x="138" y="959" fill="#cbd5e1">data / embeddings</text>
+        <rect x="290" y="950" width="10" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399"/><text x="308" y="959" fill="#cbd5e1">client / trainable</text>
+        <rect x="460" y="950" width="10" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa"/><text x="478" y="959" fill="#cbd5e1">LoRA / experts</text>
+        <rect x="620" y="950" width="10" height="10" rx="2" fill="rgba(120,53,15,0.3)" stroke="#fbbf24"/><text x="638" y="959" fill="#cbd5e1">server / coordinator</text>
+        <rect x="800" y="950" width="10" height="10" rx="2" fill="rgba(136,19,55,0.4)" stroke="#fb7185"/><text x="818" y="959" fill="#cbd5e1">routing / encrypted channel</text>
+        <line x1="1010" y1="955" x2="1040" y2="955" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="5,4"/><text x="1048" y="959" fill="#cbd5e1">comm flow</text>
+        <line x1="1140" y1="955" x2="1170" y2="955" stroke="#fbbf24" stroke-width="1.5"/><text x="1178" y="959" fill="#cbd5e1">control flow</text>
+      </g>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_1 -->
+
+  <!-- ============================ DIAGRAM 2: WARMUP PHASE WORKFLOW ============================ -->
+  <section class="section">
+    <h2><span class="num">2</span>Phase A · Warmup Workflow</h2>
+    <p class="desc">Before clustering can happen, each client independently fine-tunes a single LoRA pair (q, v projections) on its local data for <code>warmup_epochs = 3</code>. The trained B matrices — small, low-rank, task-conditioned — are uploaded to the server, where they will form the input to the similarity engine.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 880" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
+        <marker id="ah2v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/></marker>
+        <marker id="ah2r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/></marker>
+      </defs>
+      <rect width="1400" height="880" fill="url(#grid2)"/>
+
+      <!-- arrows -->
+      <line x1="220" y1="170" x2="290" y2="170" stroke="#64748b" stroke-width="1.2" marker-end="url(#ah2)"/>
+      <line x1="490" y1="170" x2="560" y2="170" stroke="#64748b" stroke-width="1.2" marker-end="url(#ah2)"/>
+      <line x1="760" y1="170" x2="830" y2="170" stroke="#64748b" stroke-width="1.2" marker-end="url(#ah2)"/>
+      <line x1="1030" y1="170" x2="1100" y2="170" stroke="#a78bfa" stroke-width="1.4" marker-end="url(#ah2v)"/>
+      <line x1="700" y1="330" x2="700" y2="490" stroke="#fb7185" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#ah2r)"/>
+      <line x1="480" y1="610" x2="560" y2="610" stroke="#64748b" stroke-width="1.2" marker-end="url(#ah2)"/>
+      <line x1="800" y1="610" x2="880" y2="610" stroke="#64748b" stroke-width="1.2" marker-end="url(#ah2)"/>
+
+      <!-- TITLE -->
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">PHASE A · LOCAL LoRA WARMUP & B-MATRIX EXTRACTION</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">objective: produce per-client task signatures {B_i^ℓ}</text>
+
+      <!-- CLIENT-SIDE PIPELINE -->
+      <text x="40" y="92" fill="#34d399" font-size="10" font-weight="600" letter-spacing="0.1em">▸ EACH CLIENT i  (parallel, no communication)</text>
+
+      <!-- Step 1: Local data -->
+      <rect x="40" y="120" width="180" height="100" rx="6" fill="#0f172a"/>
+      <rect x="40" y="120" width="180" height="100" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="130" y="142" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Local Dataset D_i</text>
+      <text x="130" y="158" text-anchor="middle" fill="#94a3b8" font-size="8">(text, label) ∈ X × {0,1,2}</text>
+      <text x="130" y="174" text-anchor="middle" fill="#67e8f9" font-size="8">never leaves client</text>
+      <rect x="55" y="184" width="150" height="24" rx="3" fill="rgba(30,41,59,0.6)" stroke="#22d3ee" stroke-width="0.7"/>
+      <text x="130" y="200" text-anchor="middle" fill="#cbd5e1" font-size="8">PhraseBank · or · Twitter shard</text>
+
+      <!-- Step 2: Tokeniser -->
+      <rect x="290" y="120" width="200" height="100" rx="6" fill="#0f172a"/>
+      <rect x="290" y="120" width="200" height="100" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="390" y="142" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">FinBERT Tokeniser</text>
+      <text x="390" y="158" text-anchor="middle" fill="#94a3b8" font-size="8">WordPiece · max_length = 128</text>
+      <text x="390" y="178" text-anchor="middle" fill="#67e8f9" font-size="8">input_ids ∈ Z^{B × 128}</text>
+      <text x="390" y="194" text-anchor="middle" fill="#67e8f9" font-size="8">attention_mask ∈ {0,1}^{B × 128}</text>
+      <text x="390" y="210" text-anchor="middle" fill="#94a3b8" font-size="7">data/preprocessing.py</text>
+
+      <!-- Step 3: WarmupFinBERT -->
+      <rect x="560" y="120" width="200" height="100" rx="6" fill="#0f172a"/>
+      <rect x="560" y="120" width="200" height="100" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="660" y="142" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">WarmupFinBERT</text>
+      <text x="660" y="158" text-anchor="middle" fill="#94a3b8" font-size="8">FinBERT (frozen, 110M params)</text>
+      <rect x="572" y="168" width="80" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.7"/>
+      <text x="612" y="181" text-anchor="middle" fill="#94a3b8" font-size="7">W_q^ℓ (frozen)</text>
+      <rect x="660" y="168" width="80" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.7"/>
+      <text x="700" y="181" text-anchor="middle" fill="#94a3b8" font-size="7">W_v^ℓ (frozen)</text>
+      <rect x="572" y="190" width="80" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="612" y="204" text-anchor="middle" fill="#ddd6fe" font-size="7">+ A_q, B_q  r=4</text>
+      <rect x="660" y="190" width="80" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="700" y="204" text-anchor="middle" fill="#ddd6fe" font-size="7">+ A_v, B_v  r=4</text>
+
+      <!-- Step 4: Local SGD -->
+      <rect x="830" y="120" width="200" height="100" rx="6" fill="#0f172a"/>
+      <rect x="830" y="120" width="200" height="100" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="930" y="142" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Local SGD (3 epochs)</text>
+      <text x="930" y="158" text-anchor="middle" fill="#94a3b8" font-size="8">AdamW · lr 3e-4 · bs 32</text>
+      <text x="930" y="176" text-anchor="middle" fill="#94a3b8" font-size="8">mixed precision · clip 1.0</text>
+      <text x="930" y="194" text-anchor="middle" fill="#6ee7b7" font-size="8">∇ only A_q,B_q,A_v,B_v</text>
+      <text x="930" y="210" text-anchor="middle" fill="#34d399" font-size="7">training/fedlease_pipeline.py</text>
+
+      <!-- Step 5: B-matrix extract -->
+      <rect x="1100" y="120" width="260" height="100" rx="6" fill="#0f172a"/>
+      <rect x="1100" y="120" width="260" height="100" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="1230" y="142" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Extract LoRA B Matrices</text>
+      <text x="1230" y="158" text-anchor="middle" fill="#94a3b8" font-size="8">for every adapter layer ℓ ∈ L</text>
+      <rect x="1115" y="168" width="115" height="42" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/>
+      <text x="1172" y="183" text-anchor="middle" fill="#c4b5fd" font-size="8">B_i^ℓ_q ∈ R^{768×4}</text>
+      <text x="1172" y="200" text-anchor="middle" fill="#94a3b8" font-size="7">12 layers · q</text>
+      <rect x="1235" y="168" width="115" height="42" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/>
+      <text x="1292" y="183" text-anchor="middle" fill="#c4b5fd" font-size="8">B_i^ℓ_v ∈ R^{768×4}</text>
+      <text x="1292" y="200" text-anchor="middle" fill="#94a3b8" font-size="7">12 layers · v</text>
+
+      <!-- Math callout for B init -->
+      <rect x="290" y="248" width="820" height="62" rx="6" fill="rgba(30,41,59,0.6)" stroke="#475569" stroke-width="1"/>
+      <text x="700" y="270" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">LoRA init invariant ·  A ~ Kaiming-uniform,  B ≡ 0  ⇒  ΔW_0 = 0  ⇒  model identical to FinBERT at t = 0</text>
+      <text x="700" y="288" text-anchor="middle" fill="#cbd5e1" font-size="9">During warmup, B accumulates the top-r singular directions of E[ ∂ℓ_i / ∂W_0 ] · this is the task signature for client i.</text>
+      <text x="700" y="302" text-anchor="middle" fill="#94a3b8" font-size="8">A absorbs input-side variation (tokeniser artefacts, register stats); B carries the task-conditional signal · use B only for similarity.</text>
+
+      <!-- Parallel-client annotation -->
+      <rect x="40" y="350" width="1320" height="60" rx="8" fill="rgba(8,51,68,0.18)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="6,4"/>
+      <text x="700" y="376" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="600">× 10 clients · all warm up independently · no inter-client communication during Phase A</text>
+      <text x="700" y="393" text-anchor="middle" fill="#94a3b8" font-size="9">end of phase: one upload per client of {B_i^ℓ}_{ℓ ∈ L}, ~73 K floats ≈ 290 KB per client</text>
+
+      <!-- Server side: receive uploads -->
+      <text x="40" y="460" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">▸ COORDINATION SERVER · phase-A inbound</text>
+
+      <!-- Box: 10 B matrices received -->
+      <rect x="40" y="490" width="440" height="240" rx="10" fill="rgba(120,53,15,0.12)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="8,4"/>
+      <text x="260" y="513" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">Received: B-matrix payloads</text>
+      <!-- 10 small stacked rectangles for clients -->
+      <g font-size="8" font-family="JetBrains Mono">
+        <g><rect x="60" y="528" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="150" y="540" text-anchor="middle" fill="#ddd6fe">B_0 = {B_0^ℓ}  (PhraseBank · C0)</text></g>
+        <g><rect x="60" y="546" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="150" y="558" text-anchor="middle" fill="#ddd6fe">B_1 = {B_1^ℓ}  (PhraseBank · C1)</text></g>
+        <g><rect x="60" y="564" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="150" y="576" text-anchor="middle" fill="#ddd6fe">B_2 = {B_2^ℓ}  (PhraseBank · C2)</text></g>
+        <g><rect x="60" y="582" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="150" y="594" text-anchor="middle" fill="#ddd6fe">B_3 = {B_3^ℓ}  (PhraseBank · C3)</text></g>
+        <g><rect x="60" y="600" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="150" y="612" text-anchor="middle" fill="#ddd6fe">B_4 = {B_4^ℓ}  (PhraseBank · C4)</text></g>
+        <g><rect x="270" y="528" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="360" y="540" text-anchor="middle" fill="#ddd6fe">B_5 = {B_5^ℓ}  (Twitter · C5)</text></g>
+        <g><rect x="270" y="546" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="360" y="558" text-anchor="middle" fill="#ddd6fe">B_6 = {B_6^ℓ}  (Twitter · C6)</text></g>
+        <g><rect x="270" y="564" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="360" y="576" text-anchor="middle" fill="#ddd6fe">B_7 = {B_7^ℓ}  (Twitter · C7)</text></g>
+        <g><rect x="270" y="582" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="360" y="594" text-anchor="middle" fill="#ddd6fe">B_8 = {B_8^ℓ}  (Twitter · C8)</text></g>
+        <g><rect x="270" y="600" width="180" height="16" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/><text x="360" y="612" text-anchor="middle" fill="#ddd6fe">B_9 = {B_9^ℓ}  (Twitter · C9)</text></g>
+      </g>
+      <text x="260" y="650" text-anchor="middle" fill="#94a3b8" font-size="8">each row: 24 matrices × R^{768×4} per client</text>
+      <text x="260" y="665" text-anchor="middle" fill="#94a3b8" font-size="8">total inbound: ~2.9 MB · raw text never received</text>
+      <text x="260" y="700" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">→ feed to Similarity Engine</text>
+
+      <!-- Distance matrix computation -->
+      <rect x="560" y="490" width="320" height="240" rx="10" fill="rgba(120,53,15,0.12)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="8,4"/>
+      <text x="720" y="513" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">Similarity Engine</text>
+      <text x="720" y="540" text-anchor="middle" fill="#e2e8f0" font-size="10">d(i, j) = (1/|L|) Σ_ℓ (1 − cos(B_i^ℓ, B_j^ℓ))</text>
+      <text x="720" y="556" text-anchor="middle" fill="#94a3b8" font-size="8">flatten B_i^ℓ ∈ R^{3072}, compute pairwise cosine</text>
+
+      <!-- mini distance matrix preview (10x10) -->
+      <g transform="translate(610, 575)">
+        <text x="65" y="-4" text-anchor="middle" fill="#94a3b8" font-size="7">D ∈ R^{10 × 10}</text>
+        <!-- 10x10 grid of small cells, with synthesised block-diagonal heat -->
+        <g font-size="0">
+          <rect x="0" y="0" width="13" height="13" fill="#1e293b"/><rect x="13" y="0" width="13" height="13" fill="#22335a"/><rect x="26" y="0" width="13" height="13" fill="#22335a"/><rect x="39" y="0" width="13" height="13" fill="#22335a"/><rect x="52" y="0" width="13" height="13" fill="#22335a"/><rect x="65" y="0" width="13" height="13" fill="#7c2d4f"/><rect x="78" y="0" width="13" height="13" fill="#7c2d4f"/><rect x="91" y="0" width="13" height="13" fill="#7c2d4f"/><rect x="104" y="0" width="13" height="13" fill="#7c2d4f"/><rect x="117" y="0" width="13" height="13" fill="#7c2d4f"/>
+          <rect x="0" y="13" width="13" height="13" fill="#22335a"/><rect x="13" y="13" width="13" height="13" fill="#1e293b"/><rect x="26" y="13" width="13" height="13" fill="#22335a"/><rect x="39" y="13" width="13" height="13" fill="#22335a"/><rect x="52" y="13" width="13" height="13" fill="#22335a"/><rect x="65" y="13" width="13" height="13" fill="#7c2d4f"/><rect x="78" y="13" width="13" height="13" fill="#7c2d4f"/><rect x="91" y="13" width="13" height="13" fill="#7c2d4f"/><rect x="104" y="13" width="13" height="13" fill="#7c2d4f"/><rect x="117" y="13" width="13" height="13" fill="#7c2d4f"/>
+          <rect x="0" y="26" width="13" height="13" fill="#22335a"/><rect x="13" y="26" width="13" height="13" fill="#22335a"/><rect x="26" y="26" width="13" height="13" fill="#1e293b"/><rect x="39" y="26" width="13" height="13" fill="#22335a"/><rect x="52" y="26" width="13" height="13" fill="#22335a"/><rect x="65" y="26" width="13" height="13" fill="#7c2d4f"/><rect x="78" y="26" width="13" height="13" fill="#7c2d4f"/><rect x="91" y="26" width="13" height="13" fill="#7c2d4f"/><rect x="104" y="26" width="13" height="13" fill="#7c2d4f"/><rect x="117" y="26" width="13" height="13" fill="#7c2d4f"/>
+          <rect x="0" y="39" width="13" height="13" fill="#22335a"/><rect x="13" y="39" width="13" height="13" fill="#22335a"/><rect x="26" y="39" width="13" height="13" fill="#22335a"/><rect x="39" y="39" width="13" height="13" fill="#1e293b"/><rect x="52" y="39" width="13" height="13" fill="#22335a"/><rect x="65" y="39" width="13" height="13" fill="#7c2d4f"/><rect x="78" y="39" width="13" height="13" fill="#7c2d4f"/><rect x="91" y="39" width="13" height="13" fill="#7c2d4f"/><rect x="104" y="39" width="13" height="13" fill="#7c2d4f"/><rect x="117" y="39" width="13" height="13" fill="#7c2d4f"/>
+          <rect x="0" y="52" width="13" height="13" fill="#22335a"/><rect x="13" y="52" width="13" height="13" fill="#22335a"/><rect x="26" y="52" width="13" height="13" fill="#22335a"/><rect x="39" y="52" width="13" height="13" fill="#22335a"/><rect x="52" y="52" width="13" height="13" fill="#1e293b"/><rect x="65" y="52" width="13" height="13" fill="#7c2d4f"/><rect x="78" y="52" width="13" height="13" fill="#7c2d4f"/><rect x="91" y="52" width="13" height="13" fill="#7c2d4f"/><rect x="104" y="52" width="13" height="13" fill="#7c2d4f"/><rect x="117" y="52" width="13" height="13" fill="#7c2d4f"/>
+          <rect x="0" y="65" width="13" height="13" fill="#7c2d4f"/><rect x="13" y="65" width="13" height="13" fill="#7c2d4f"/><rect x="26" y="65" width="13" height="13" fill="#7c2d4f"/><rect x="39" y="65" width="13" height="13" fill="#7c2d4f"/><rect x="52" y="65" width="13" height="13" fill="#7c2d4f"/><rect x="65" y="65" width="13" height="13" fill="#1e293b"/><rect x="78" y="65" width="13" height="13" fill="#3a2347"/><rect x="91" y="65" width="13" height="13" fill="#3a2347"/><rect x="104" y="65" width="13" height="13" fill="#3a2347"/><rect x="117" y="65" width="13" height="13" fill="#3a2347"/>
+          <rect x="0" y="78" width="13" height="13" fill="#7c2d4f"/><rect x="13" y="78" width="13" height="13" fill="#7c2d4f"/><rect x="26" y="78" width="13" height="13" fill="#7c2d4f"/><rect x="39" y="78" width="13" height="13" fill="#7c2d4f"/><rect x="52" y="78" width="13" height="13" fill="#7c2d4f"/><rect x="65" y="78" width="13" height="13" fill="#3a2347"/><rect x="78" y="78" width="13" height="13" fill="#1e293b"/><rect x="91" y="78" width="13" height="13" fill="#3a2347"/><rect x="104" y="78" width="13" height="13" fill="#3a2347"/><rect x="117" y="78" width="13" height="13" fill="#3a2347"/>
+          <rect x="0" y="91" width="13" height="13" fill="#7c2d4f"/><rect x="13" y="91" width="13" height="13" fill="#7c2d4f"/><rect x="26" y="91" width="13" height="13" fill="#7c2d4f"/><rect x="39" y="91" width="13" height="13" fill="#7c2d4f"/><rect x="52" y="91" width="13" height="13" fill="#7c2d4f"/><rect x="65" y="91" width="13" height="13" fill="#3a2347"/><rect x="78" y="91" width="13" height="13" fill="#3a2347"/><rect x="91" y="91" width="13" height="13" fill="#1e293b"/><rect x="104" y="91" width="13" height="13" fill="#3a2347"/><rect x="117" y="91" width="13" height="13" fill="#3a2347"/>
+          <rect x="0" y="104" width="13" height="13" fill="#7c2d4f"/><rect x="13" y="104" width="13" height="13" fill="#7c2d4f"/><rect x="26" y="104" width="13" height="13" fill="#7c2d4f"/><rect x="39" y="104" width="13" height="13" fill="#7c2d4f"/><rect x="52" y="104" width="13" height="13" fill="#7c2d4f"/><rect x="65" y="104" width="13" height="13" fill="#3a2347"/><rect x="78" y="104" width="13" height="13" fill="#3a2347"/><rect x="91" y="104" width="13" height="13" fill="#3a2347"/><rect x="104" y="104" width="13" height="13" fill="#1e293b"/><rect x="117" y="104" width="13" height="13" fill="#3a2347"/>
+          <rect x="0" y="117" width="13" height="13" fill="#7c2d4f"/><rect x="13" y="117" width="13" height="13" fill="#7c2d4f"/><rect x="26" y="117" width="13" height="13" fill="#7c2d4f"/><rect x="39" y="117" width="13" height="13" fill="#7c2d4f"/><rect x="52" y="117" width="13" height="13" fill="#7c2d4f"/><rect x="65" y="117" width="13" height="13" fill="#3a2347"/><rect x="78" y="117" width="13" height="13" fill="#3a2347"/><rect x="91" y="117" width="13" height="13" fill="#3a2347"/><rect x="104" y="117" width="13" height="13" fill="#3a2347"/><rect x="117" y="117" width="13" height="13" fill="#1e293b"/>
+        </g>
+        <!-- legend bar -->
+        <rect x="0" y="140" width="130" height="8" fill="url(#heat-grad)"/>
+        <text x="0" y="160" fill="#94a3b8" font-size="7">low d (similar)</text>
+        <text x="130" y="160" text-anchor="end" fill="#94a3b8" font-size="7">high d (different)</text>
+      </g>
+      <defs>
+        <linearGradient id="heat-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#1e293b"/>
+          <stop offset="50%" stop-color="#3a2347"/>
+          <stop offset="100%" stop-color="#7c2d4f"/>
+        </linearGradient>
+      </defs>
+      <text x="720" y="720" text-anchor="middle" fill="#94a3b8" font-size="8">block-diagonal structure emerges: within-register ≈ 0.15  ·  cross-register ≈ 0.65</text>
+
+      <!-- Next step pointer -->
+      <rect x="940" y="490" width="420" height="240" rx="10" fill="rgba(120,53,15,0.12)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="8,4"/>
+      <text x="1150" y="513" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="600">Phase-A output handoff</text>
+      <text x="1150" y="540" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">D ∈ R^{10 × 10}  →  Clustering Engine</text>
+
+      <rect x="960" y="558" width="400" height="22" rx="4" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1160" y="573" text-anchor="middle" fill="#ddd6fe" font-size="9">agglomerative linkage (scipy · average)</text>
+      <rect x="960" y="586" width="400" height="22" rx="4" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1160" y="601" text-anchor="middle" fill="#ddd6fe" font-size="9">sweep k ∈ [2, 8]  ·  silhouette S(k)</text>
+      <rect x="960" y="614" width="400" height="22" rx="4" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1160" y="629" text-anchor="middle" fill="#ddd6fe" font-size="9">M* = argmax_k S(k)  ⇒  expert allocation</text>
+      <rect x="960" y="642" width="400" height="22" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="0.8"/>
+      <text x="1160" y="657" text-anchor="middle" fill="#6ee7b7" font-size="9">init (A_c, B_c) = mean of warmup pairs in cluster c</text>
+
+      <text x="1150" y="690" text-anchor="middle" fill="#94a3b8" font-size="8">▸ details in Diagram 3</text>
+      <text x="1150" y="710" text-anchor="middle" fill="#fda4af" font-size="9">▸ followed by Phase B (Diagram 5)</text>
+
+      <!-- LEGEND -->
+      <text x="40" y="826" fill="#94a3b8" font-size="9" font-weight="600" letter-spacing="0.1em">LEGEND</text>
+      <g font-size="9" font-family="JetBrains Mono">
+        <rect x="110" y="820" width="10" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee"/><text x="128" y="829" fill="#cbd5e1">data / tokens</text>
+        <rect x="240" y="820" width="10" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399"/><text x="258" y="829" fill="#cbd5e1">model / training</text>
+        <rect x="390" y="820" width="10" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa"/><text x="408" y="829" fill="#cbd5e1">LoRA A, B matrices</text>
+        <rect x="560" y="820" width="10" height="10" rx="2" fill="rgba(120,53,15,0.3)" stroke="#fbbf24"/><text x="578" y="829" fill="#cbd5e1">server pipeline</text>
+        <line x1="710" y1="825" x2="740" y2="825" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="5,4"/><text x="748" y="829" fill="#cbd5e1">upload to server</text>
+      </g>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_2 -->
+
+  <!-- ============================ DIAGRAM 3: CLUSTERING & EXPERT ALLOCATION ============================ -->
+  <section class="section">
+    <h2><span class="num">3</span>Clustering & Expert-Allocation Workflow</h2>
+    <p class="desc">The B-matrix distance matrix is fed into a sweep over candidate cluster counts <code>k ∈ [M_min, M_max]</code>. Silhouette is maximised at <code>k = M*</code>, which fixes both the number of experts and the assignment c(i) of each client to a cluster. The <em>initialisation</em> of each cluster expert (Eq. 3) is the mean of its members' warmup LoRA pairs.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 820" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid3" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24"/></marker>
+        <marker id="ah3v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/></marker>
+      </defs>
+      <rect width="1400" height="820" fill="url(#grid3)"/>
+
+      <!-- arrows between stages -->
+      <line x1="250" y1="270" x2="320" y2="270" stroke="#fbbf24" stroke-width="1.3" marker-end="url(#ah3)"/>
+      <line x1="610" y1="270" x2="680" y2="270" stroke="#fbbf24" stroke-width="1.3" marker-end="url(#ah3)"/>
+      <line x1="980" y1="270" x2="1050" y2="270" stroke="#fbbf24" stroke-width="1.3" marker-end="url(#ah3)"/>
+      <!-- down to expert bank -->
+      <line x1="700" y1="560" x2="700" y2="600" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ah3v)"/>
+
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">CLUSTERING ENGINE · EXPERT ALLOCATOR · INITIALISATION</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">silhouette-optimal agglomerative clustering on the B-matrix distance matrix</text>
+
+      <!-- Stage 1: Input warmup B matrices -->
+      <text x="50" y="92" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ STAGE 1 · WARMUP B MATRICES</text>
+      <rect x="50" y="110" width="200" height="320" rx="8" fill="#0f172a"/>
+      <rect x="50" y="110" width="200" height="320" rx="8" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="150" y="132" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">{B_i^ℓ}_{i, ℓ}</text>
+      <text x="150" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">10 clients × 24 layers</text>
+      <!-- 10 small chips -->
+      <g font-size="8">
+        <rect x="68" y="160" width="164" height="22" rx="3" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.7"/><text x="150" y="175" text-anchor="middle" fill="#67e8f9">C0 · PhraseBank</text>
+        <rect x="68" y="186" width="164" height="22" rx="3" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.7"/><text x="150" y="201" text-anchor="middle" fill="#67e8f9">C1 · PhraseBank</text>
+        <rect x="68" y="212" width="164" height="22" rx="3" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.7"/><text x="150" y="227" text-anchor="middle" fill="#67e8f9">C2 · PhraseBank</text>
+        <rect x="68" y="238" width="164" height="22" rx="3" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.7"/><text x="150" y="253" text-anchor="middle" fill="#67e8f9">C3 · PhraseBank</text>
+        <rect x="68" y="264" width="164" height="22" rx="3" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.7"/><text x="150" y="279" text-anchor="middle" fill="#67e8f9">C4 · PhraseBank</text>
+        <rect x="68" y="290" width="164" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="0.7"/><text x="150" y="305" text-anchor="middle" fill="#fda4af">C5 · Twitter</text>
+        <rect x="68" y="316" width="164" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="0.7"/><text x="150" y="331" text-anchor="middle" fill="#fda4af">C6 · Twitter</text>
+        <rect x="68" y="342" width="164" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="0.7"/><text x="150" y="357" text-anchor="middle" fill="#fda4af">C7 · Twitter</text>
+        <rect x="68" y="368" width="164" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="0.7"/><text x="150" y="383" text-anchor="middle" fill="#fda4af">C8 · Twitter</text>
+        <rect x="68" y="394" width="164" height="22" rx="3" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="0.7"/><text x="150" y="409" text-anchor="middle" fill="#fda4af">C9 · Twitter</text>
+      </g>
+
+      <!-- Stage 2: Distance matrix -->
+      <text x="320" y="92" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">▸ STAGE 2 · DISTANCE MATRIX</text>
+      <rect x="320" y="110" width="290" height="320" rx="8" fill="#0f172a"/>
+      <rect x="320" y="110" width="290" height="320" rx="8" fill="rgba(120,53,15,0.25)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="465" y="132" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">D ∈ R^{10 × 10}</text>
+      <text x="465" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">d(i,j) = (1/|L|) Σ_ℓ (1 − cos(B_i^ℓ, B_j^ℓ))</text>
+
+      <!-- 10x10 grid bigger -->
+      <g transform="translate(360, 165)">
+        <g font-size="0">
+          <rect x="0" y="0" width="20" height="20" fill="#1e293b"/><rect x="20" y="0" width="20" height="20" fill="#2a3a64"/><rect x="40" y="0" width="20" height="20" fill="#22335a"/><rect x="60" y="0" width="20" height="20" fill="#2a3a64"/><rect x="80" y="0" width="20" height="20" fill="#22335a"/><rect x="100" y="0" width="20" height="20" fill="#882e4c"/><rect x="120" y="0" width="20" height="20" fill="#7c2d4f"/><rect x="140" y="0" width="20" height="20" fill="#882e4c"/><rect x="160" y="0" width="20" height="20" fill="#7c2d4f"/><rect x="180" y="0" width="20" height="20" fill="#882e4c"/>
+          <rect x="0" y="20" width="20" height="20" fill="#2a3a64"/><rect x="20" y="20" width="20" height="20" fill="#1e293b"/><rect x="40" y="20" width="20" height="20" fill="#2a3a64"/><rect x="60" y="20" width="20" height="20" fill="#22335a"/><rect x="80" y="20" width="20" height="20" fill="#2a3a64"/><rect x="100" y="20" width="20" height="20" fill="#7c2d4f"/><rect x="120" y="20" width="20" height="20" fill="#882e4c"/><rect x="140" y="20" width="20" height="20" fill="#7c2d4f"/><rect x="160" y="20" width="20" height="20" fill="#882e4c"/><rect x="180" y="20" width="20" height="20" fill="#7c2d4f"/>
+          <rect x="0" y="40" width="20" height="20" fill="#22335a"/><rect x="20" y="40" width="20" height="20" fill="#2a3a64"/><rect x="40" y="40" width="20" height="20" fill="#1e293b"/><rect x="60" y="40" width="20" height="20" fill="#2a3a64"/><rect x="80" y="40" width="20" height="20" fill="#22335a"/><rect x="100" y="40" width="20" height="20" fill="#882e4c"/><rect x="120" y="40" width="20" height="20" fill="#7c2d4f"/><rect x="140" y="40" width="20" height="20" fill="#882e4c"/><rect x="160" y="40" width="20" height="20" fill="#7c2d4f"/><rect x="180" y="40" width="20" height="20" fill="#882e4c"/>
+          <rect x="0" y="60" width="20" height="20" fill="#2a3a64"/><rect x="20" y="60" width="20" height="20" fill="#22335a"/><rect x="40" y="60" width="20" height="20" fill="#2a3a64"/><rect x="60" y="60" width="20" height="20" fill="#1e293b"/><rect x="80" y="60" width="20" height="20" fill="#22335a"/><rect x="100" y="60" width="20" height="20" fill="#7c2d4f"/><rect x="120" y="60" width="20" height="20" fill="#882e4c"/><rect x="140" y="60" width="20" height="20" fill="#7c2d4f"/><rect x="160" y="60" width="20" height="20" fill="#882e4c"/><rect x="180" y="60" width="20" height="20" fill="#7c2d4f"/>
+          <rect x="0" y="80" width="20" height="20" fill="#22335a"/><rect x="20" y="80" width="20" height="20" fill="#2a3a64"/><rect x="40" y="80" width="20" height="20" fill="#22335a"/><rect x="60" y="80" width="20" height="20" fill="#22335a"/><rect x="80" y="80" width="20" height="20" fill="#1e293b"/><rect x="100" y="80" width="20" height="20" fill="#882e4c"/><rect x="120" y="80" width="20" height="20" fill="#7c2d4f"/><rect x="140" y="80" width="20" height="20" fill="#882e4c"/><rect x="160" y="80" width="20" height="20" fill="#7c2d4f"/><rect x="180" y="80" width="20" height="20" fill="#882e4c"/>
+          <rect x="0" y="100" width="20" height="20" fill="#882e4c"/><rect x="20" y="100" width="20" height="20" fill="#7c2d4f"/><rect x="40" y="100" width="20" height="20" fill="#882e4c"/><rect x="60" y="100" width="20" height="20" fill="#7c2d4f"/><rect x="80" y="100" width="20" height="20" fill="#882e4c"/><rect x="100" y="100" width="20" height="20" fill="#1e293b"/><rect x="120" y="100" width="20" height="20" fill="#3a2347"/><rect x="140" y="100" width="20" height="20" fill="#42284f"/><rect x="160" y="100" width="20" height="20" fill="#3a2347"/><rect x="180" y="100" width="20" height="20" fill="#42284f"/>
+          <rect x="0" y="120" width="20" height="20" fill="#7c2d4f"/><rect x="20" y="120" width="20" height="20" fill="#882e4c"/><rect x="40" y="120" width="20" height="20" fill="#7c2d4f"/><rect x="60" y="120" width="20" height="20" fill="#882e4c"/><rect x="80" y="120" width="20" height="20" fill="#7c2d4f"/><rect x="100" y="120" width="20" height="20" fill="#3a2347"/><rect x="120" y="120" width="20" height="20" fill="#1e293b"/><rect x="140" y="120" width="20" height="20" fill="#3a2347"/><rect x="160" y="120" width="20" height="20" fill="#42284f"/><rect x="180" y="120" width="20" height="20" fill="#3a2347"/>
+          <rect x="0" y="140" width="20" height="20" fill="#882e4c"/><rect x="20" y="140" width="20" height="20" fill="#7c2d4f"/><rect x="40" y="140" width="20" height="20" fill="#882e4c"/><rect x="60" y="140" width="20" height="20" fill="#7c2d4f"/><rect x="80" y="140" width="20" height="20" fill="#882e4c"/><rect x="100" y="140" width="20" height="20" fill="#42284f"/><rect x="120" y="140" width="20" height="20" fill="#3a2347"/><rect x="140" y="140" width="20" height="20" fill="#1e293b"/><rect x="160" y="140" width="20" height="20" fill="#3a2347"/><rect x="180" y="140" width="20" height="20" fill="#42284f"/>
+          <rect x="0" y="160" width="20" height="20" fill="#7c2d4f"/><rect x="20" y="160" width="20" height="20" fill="#882e4c"/><rect x="40" y="160" width="20" height="20" fill="#7c2d4f"/><rect x="60" y="160" width="20" height="20" fill="#882e4c"/><rect x="80" y="160" width="20" height="20" fill="#7c2d4f"/><rect x="100" y="160" width="20" height="20" fill="#3a2347"/><rect x="120" y="160" width="20" height="20" fill="#42284f"/><rect x="140" y="160" width="20" height="20" fill="#3a2347"/><rect x="160" y="160" width="20" height="20" fill="#1e293b"/><rect x="180" y="160" width="20" height="20" fill="#3a2347"/>
+          <rect x="0" y="180" width="20" height="20" fill="#882e4c"/><rect x="20" y="180" width="20" height="20" fill="#7c2d4f"/><rect x="40" y="180" width="20" height="20" fill="#882e4c"/><rect x="60" y="180" width="20" height="20" fill="#7c2d4f"/><rect x="80" y="180" width="20" height="20" fill="#882e4c"/><rect x="100" y="180" width="20" height="20" fill="#42284f"/><rect x="120" y="180" width="20" height="20" fill="#3a2347"/><rect x="140" y="180" width="20" height="20" fill="#42284f"/><rect x="160" y="180" width="20" height="20" fill="#3a2347"/><rect x="180" y="180" width="20" height="20" fill="#1e293b"/>
+        </g>
+      </g>
+      <!-- block highlight: PhraseBank cluster -->
+      <rect x="360" y="165" width="100" height="100" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <rect x="460" y="265" width="100" height="100" fill="none" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <text x="465" y="385" text-anchor="middle" fill="#94a3b8" font-size="8">block-diagonal ⇒ two latent registers</text>
+      <text x="465" y="400" text-anchor="middle" fill="#67e8f9" font-size="7">cyan box: PhraseBank cluster   ·   rose box: Twitter cluster</text>
+      <text x="465" y="418" text-anchor="middle" fill="#fbbf24" font-size="8">clustering/similarity.py · compute_distance_matrix</text>
+
+      <!-- Stage 3: Dendrogram + silhouette sweep -->
+      <text x="680" y="92" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">▸ STAGE 3 · AGGLOMERATIVE CLUSTERING & SILHOUETTE</text>
+      <rect x="680" y="110" width="300" height="320" rx="8" fill="#0f172a"/>
+      <rect x="680" y="110" width="300" height="320" rx="8" fill="rgba(120,53,15,0.25)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="830" y="132" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">dendrogram · average linkage</text>
+
+      <!-- Dendrogram drawing: 10 leaves -->
+      <g stroke="#a78bfa" stroke-width="1.3" fill="none">
+        <!-- Leaves at y = 250, vertical bars going up -->
+        <!-- PhraseBank cluster (C0-C4) -->
+        <line x1="700" y1="250" x2="700" y2="220"/>
+        <line x1="720" y1="250" x2="720" y2="220"/>
+        <line x1="700" y1="220" x2="720" y2="220"/>
+        <line x1="710" y1="220" x2="710" y2="205"/>
+
+        <line x1="740" y1="250" x2="740" y2="210"/>
+        <line x1="710" y1="205" x2="740" y2="205"/>
+        <path d="M 710 205 L 710 195 L 740 195 L 740 210 M 710 195 L 710 180" stroke-dasharray="0"/>
+
+        <line x1="760" y1="250" x2="760" y2="200"/>
+        <line x1="780" y1="250" x2="780" y2="200"/>
+        <line x1="760" y1="200" x2="780" y2="200"/>
+        <line x1="770" y1="200" x2="770" y2="178"/>
+        <line x1="710" y1="180" x2="770" y2="180"/>
+        <line x1="740" y1="180" x2="740" y2="158"/>
+
+        <!-- Twitter cluster (C5-C9) -->
+        <line x1="820" y1="250" x2="820" y2="225"/>
+        <line x1="840" y1="250" x2="840" y2="225"/>
+        <line x1="820" y1="225" x2="840" y2="225"/>
+        <line x1="830" y1="225" x2="830" y2="208"/>
+
+        <line x1="860" y1="250" x2="860" y2="215"/>
+        <line x1="830" y1="208" x2="860" y2="208"/>
+        <line x1="845" y1="208" x2="845" y2="195"/>
+
+        <line x1="880" y1="250" x2="880" y2="200"/>
+        <line x1="900" y1="250" x2="900" y2="200"/>
+        <line x1="880" y1="200" x2="900" y2="200"/>
+        <line x1="890" y1="200" x2="890" y2="183"/>
+        <line x1="845" y1="183" x2="890" y2="183"/>
+        <line x1="868" y1="183" x2="868" y2="158"/>
+
+        <!-- Top join (the 2-cluster cut) -->
+        <line x1="740" y1="158" x2="868" y2="158"/>
+        <line x1="804" y1="158" x2="804" y2="140"/>
+      </g>
+
+      <!-- horizontal cut line at k=2 -->
+      <line x1="688" y1="148" x2="972" y2="148" stroke="#22d3ee" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="975" y="151" fill="#22d3ee" font-size="8">cut at k = 2</text>
+
+      <!-- leaf labels -->
+      <g fill="#94a3b8" font-size="7">
+        <text x="700" y="262" text-anchor="middle">C0</text><text x="720" y="262" text-anchor="middle">C1</text><text x="740" y="262" text-anchor="middle">C2</text><text x="760" y="262" text-anchor="middle">C3</text><text x="780" y="262" text-anchor="middle">C4</text>
+        <text x="820" y="262" text-anchor="middle">C5</text><text x="840" y="262" text-anchor="middle">C6</text><text x="860" y="262" text-anchor="middle">C7</text><text x="880" y="262" text-anchor="middle">C8</text><text x="900" y="262" text-anchor="middle">C9</text>
+      </g>
+
+      <!-- silhouette curve -->
+      <text x="830" y="290" text-anchor="middle" fill="#cbd5e1" font-size="10" font-weight="600">silhouette  S(k)</text>
+      <!-- axes -->
+      <line x1="700" y1="400" x2="970" y2="400" stroke="#475569" stroke-width="1"/>
+      <line x1="700" y1="400" x2="700" y2="305" stroke="#475569" stroke-width="1"/>
+      <text x="700" y="412" text-anchor="middle" fill="#64748b" font-size="7">2</text>
+      <text x="745" y="412" text-anchor="middle" fill="#64748b" font-size="7">3</text>
+      <text x="790" y="412" text-anchor="middle" fill="#64748b" font-size="7">4</text>
+      <text x="835" y="412" text-anchor="middle" fill="#64748b" font-size="7">5</text>
+      <text x="880" y="412" text-anchor="middle" fill="#64748b" font-size="7">6</text>
+      <text x="925" y="412" text-anchor="middle" fill="#64748b" font-size="7">7</text>
+      <text x="970" y="412" text-anchor="middle" fill="#64748b" font-size="7">8</text>
+      <text x="685" y="312" text-anchor="end" fill="#64748b" font-size="7">0.85</text>
+      <text x="685" y="400" text-anchor="end" fill="#64748b" font-size="7">0.0</text>
+
+      <!-- silhouette polyline: peak at k=2 -->
+      <polyline points="700,315 745,355 790,372 835,378 880,381 925,385 970,388" fill="none" stroke="#34d399" stroke-width="2"/>
+      <!-- markers -->
+      <circle cx="700" cy="315" r="4" fill="#34d399"/>
+      <circle cx="745" cy="355" r="3" fill="#64748b"/>
+      <circle cx="790" cy="372" r="3" fill="#64748b"/>
+      <circle cx="835" cy="378" r="3" fill="#64748b"/>
+      <circle cx="880" cy="381" r="3" fill="#64748b"/>
+      <circle cx="925" cy="385" r="3" fill="#64748b"/>
+      <circle cx="970" cy="388" r="3" fill="#64748b"/>
+      <text x="700" y="305" text-anchor="middle" fill="#6ee7b7" font-size="8" font-weight="600">M* = 2</text>
+
+      <!-- Stage 4: cluster labels -->
+      <text x="1050" y="92" fill="#34d399" font-size="10" font-weight="600" letter-spacing="0.1em">▸ STAGE 4 · CLUSTER LABELS  c(i)</text>
+      <rect x="1050" y="110" width="320" height="320" rx="8" fill="#0f172a"/>
+      <rect x="1050" y="110" width="320" height="320" rx="8" fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="1210" y="132" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">c(i) ∈ {0, 1}</text>
+      <text x="1210" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">silhouette-optimal partition (M = 2)</text>
+
+      <!-- cluster 0 box -->
+      <rect x="1070" y="162" width="135" height="246" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.2"/>
+      <text x="1137" y="184" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">Cluster 0  (PhraseBank)</text>
+      <g font-size="9" fill="#cbd5e1">
+        <text x="1137" y="206" text-anchor="middle">C0 · C1 · C2</text>
+        <text x="1137" y="222" text-anchor="middle">C3 · C4</text>
+      </g>
+      <text x="1137" y="246" text-anchor="middle" fill="#94a3b8" font-size="8">n_total = 1 585</text>
+      <text x="1137" y="262" text-anchor="middle" fill="#94a3b8" font-size="8">register: analyst prose</text>
+      <text x="1137" y="290" text-anchor="middle" fill="#a78bfa" font-size="9">assigned_expert_idx = 0</text>
+      <line x1="1080" y1="300" x2="1195" y2="300" stroke="#475569" stroke-width="0.5"/>
+      <text x="1137" y="318" text-anchor="middle" fill="#fbbf24" font-size="8">Eq. 3 init:</text>
+      <text x="1137" y="334" text-anchor="middle" fill="#e2e8f0" font-size="8">A_0 = (1/5) Σ A_i^warmup</text>
+      <text x="1137" y="350" text-anchor="middle" fill="#e2e8f0" font-size="8">B_0 = (1/5) Σ B_i^warmup</text>
+      <text x="1137" y="380" text-anchor="middle" fill="#67e8f9" font-size="8">→ expert 0</text>
+
+      <!-- cluster 1 box -->
+      <rect x="1215" y="162" width="135" height="246" rx="6" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.2"/>
+      <text x="1282" y="184" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">Cluster 1  (Twitter)</text>
+      <g font-size="9" fill="#cbd5e1">
+        <text x="1282" y="206" text-anchor="middle">C5 · C6 · C7</text>
+        <text x="1282" y="222" text-anchor="middle">C8 · C9</text>
+      </g>
+      <text x="1282" y="246" text-anchor="middle" fill="#94a3b8" font-size="8">n_total = 8 351</text>
+      <text x="1282" y="262" text-anchor="middle" fill="#94a3b8" font-size="8">register: retail tweets</text>
+      <text x="1282" y="290" text-anchor="middle" fill="#a78bfa" font-size="9">assigned_expert_idx = 1</text>
+      <line x1="1225" y1="300" x2="1340" y2="300" stroke="#475569" stroke-width="0.5"/>
+      <text x="1282" y="318" text-anchor="middle" fill="#fbbf24" font-size="8">Eq. 3 init:</text>
+      <text x="1282" y="334" text-anchor="middle" fill="#e2e8f0" font-size="8">A_1 = (1/5) Σ A_i^warmup</text>
+      <text x="1282" y="350" text-anchor="middle" fill="#e2e8f0" font-size="8">B_1 = (1/5) Σ B_i^warmup</text>
+      <text x="1282" y="380" text-anchor="middle" fill="#fda4af" font-size="8">→ expert 1</text>
+
+      <!-- Bottom band: global expert bank -->
+      <text x="50" y="610" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ STAGE 5 · GLOBAL EXPERT BANK (initialised)</text>
+      <rect x="50" y="620" width="1320" height="140" rx="10" fill="rgba(76,29,149,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="710" y="644" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Server-side expert bank · broadcast at start of every Phase-B round</text>
+
+      <!-- Expert 0 visual -->
+      <rect x="80" y="660" width="600" height="80" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.3"/>
+      <text x="380" y="681" text-anchor="middle" fill="#67e8f9" font-size="10" font-weight="600">Expert E_0  (assigned: cluster 0 / PhraseBank)</text>
+      <g font-size="8" font-family="JetBrains Mono">
+        <rect x="100" y="690" width="120" height="40" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa"/><text x="160" y="706" text-anchor="middle" fill="#ddd6fe">A_0^ℓ ∈ R^{4 × 768}</text><text x="160" y="720" text-anchor="middle" fill="#94a3b8">layer ℓ ∈ L</text>
+        <rect x="230" y="690" width="120" height="40" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa"/><text x="290" y="706" text-anchor="middle" fill="#ddd6fe">B_0^ℓ ∈ R^{768 × 4}</text><text x="290" y="720" text-anchor="middle" fill="#94a3b8">layer ℓ ∈ L</text>
+        <text x="380" y="703" text-anchor="middle" fill="#fbbf24">×</text>
+        <rect x="400" y="690" width="260" height="40" rx="3" fill="rgba(30,41,59,0.55)" stroke="#cbd5e1"/><text x="530" y="706" text-anchor="middle" fill="#e2e8f0">ΔW_0 = (α/r) · B_0 A_0  ·  scaling 2.0</text><text x="530" y="720" text-anchor="middle" fill="#94a3b8">12 layers × 2 modules (q, v)</text>
+      </g>
+
+      <!-- Expert 1 visual -->
+      <rect x="700" y="660" width="640" height="80" rx="8" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1.3"/>
+      <text x="1020" y="681" text-anchor="middle" fill="#fda4af" font-size="10" font-weight="600">Expert E_1  (assigned: cluster 1 / Twitter)</text>
+      <g font-size="8" font-family="JetBrains Mono">
+        <rect x="720" y="690" width="120" height="40" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa"/><text x="780" y="706" text-anchor="middle" fill="#ddd6fe">A_1^ℓ ∈ R^{4 × 768}</text><text x="780" y="720" text-anchor="middle" fill="#94a3b8">layer ℓ ∈ L</text>
+        <rect x="850" y="690" width="120" height="40" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa"/><text x="910" y="706" text-anchor="middle" fill="#ddd6fe">B_1^ℓ ∈ R^{768 × 4}</text><text x="910" y="720" text-anchor="middle" fill="#94a3b8">layer ℓ ∈ L</text>
+        <text x="1000" y="703" text-anchor="middle" fill="#fbbf24">×</text>
+        <rect x="1020" y="690" width="300" height="40" rx="3" fill="rgba(30,41,59,0.55)" stroke="#cbd5e1"/><text x="1170" y="706" text-anchor="middle" fill="#e2e8f0">ΔW_1 = (α/r) · B_1 A_1  ·  scaling 2.0</text><text x="1170" y="720" text-anchor="middle" fill="#94a3b8">trainable: ≈ 147 K floats / expert</text>
+      </g>
+
+      <text x="700" y="795" text-anchor="middle" fill="#94a3b8" font-size="9">▸ ready for Phase B · adaptive top-M routing (Diagram 4) · federated rounds (Diagram 5)</text>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_3 -->
+
+  <!-- ============================ DIAGRAM 4: ADAPTIVE TOP-M ROUTING ============================ -->
+  <section class="section">
+    <h2><span class="num">4</span>Adaptive Top-M Routing  (G ∈ R<sup>(2M−1)×d</sup>, with assigned-expert guarantee)</h2>
+    <p class="desc">The single most novel component. Output dimension <code>2M − 1</code> (not 2M, not M) is the minimum that <em>structurally guarantees</em> the client's assigned expert participates in the top-M for every input — proven combinatorially below. Worked example: <code>M = 3</code>, assigned expert <code>E_0</code>.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 1040" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid4" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah4" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/></marker>
+        <marker id="ah4r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/></marker>
+        <marker id="ah4v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/></marker>
+        <marker id="ah4c" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/></marker>
+      </defs>
+      <rect width="1400" height="1040" fill="url(#grid4)"/>
+
+      <!-- arrows -->
+      <line x1="220" y1="170" x2="290" y2="170" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah4c)"/>
+      <line x1="540" y1="170" x2="610" y2="170" stroke="#fb7185" stroke-width="1.4" marker-end="url(#ah4r)"/>
+      <line x1="870" y1="170" x2="940" y2="170" stroke="#fb7185" stroke-width="1.4" marker-end="url(#ah4r)"/>
+      <line x1="1190" y1="170" x2="1260" y2="170" stroke="#fb7185" stroke-width="1.4" marker-end="url(#ah4r)"/>
+      <!-- down to slot row -->
+      <line x1="700" y1="290" x2="700" y2="340" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#ah4r)"/>
+      <!-- slot row → mapping -->
+      <line x1="700" y1="540" x2="700" y2="590" stroke="#a78bfa" stroke-width="1.4" marker-end="url(#ah4v)"/>
+      <!-- mapping → combined -->
+      <line x1="700" y1="790" x2="700" y2="840" stroke="#a78bfa" stroke-width="1.4" marker-end="url(#ah4v)"/>
+
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">ADAPTIVE TOP-M ROUTER · WORKED EXAMPLE (M = 3, assigned_expert_idx = 0)</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">models/adaptive_router.py · AdaptiveTopMRouter</text>
+
+      <!-- ============== ROW 1: Forward pass tensor flow ============== -->
+      <text x="40" y="92" fill="#fb7185" font-size="10" font-weight="600" letter-spacing="0.1em">▸ TENSOR FLOW · h → logits → ω̂ → top-M</text>
+
+      <!-- [CLS] embedding -->
+      <rect x="40" y="120" width="180" height="100" rx="6" fill="#0f172a"/>
+      <rect x="40" y="120" width="180" height="100" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="130" y="144" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[CLS] embedding</text>
+      <text x="130" y="162" text-anchor="middle" fill="#94a3b8" font-size="8">from FinBERT embeddings sublayer</text>
+      <text x="130" y="184" text-anchor="middle" fill="#67e8f9" font-size="11">h ∈ R<tspan font-size="8" dy="-4">B × 768</tspan></text>
+      <text x="130" y="208" text-anchor="middle" fill="#94a3b8" font-size="7">batch B = 1 (example)</text>
+
+      <!-- Gate G -->
+      <rect x="290" y="120" width="250" height="100" rx="6" fill="#0f172a"/>
+      <rect x="290" y="120" width="250" height="100" rx="6" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="415" y="144" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Gate Matrix  G</text>
+      <text x="415" y="162" text-anchor="middle" fill="#94a3b8" font-size="8">trainable, no bias · per-client</text>
+      <text x="415" y="184" text-anchor="middle" fill="#fda4af" font-size="11">G ∈ R<tspan font-size="8" dy="-4">(2M−1) × d</tspan></text>
+      <text x="415" y="208" text-anchor="middle" fill="#fb7185" font-size="9">M = 3 ⇒ G ∈ R<tspan font-size="7" dy="-3">5 × 768</tspan></text>
+
+      <!-- Logits -->
+      <rect x="610" y="120" width="260" height="100" rx="6" fill="#0f172a"/>
+      <rect x="610" y="120" width="260" height="100" rx="6" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="740" y="144" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Logits = G · h</text>
+      <text x="740" y="166" text-anchor="middle" fill="#fda4af" font-size="11">logits ∈ R<tspan font-size="8" dy="-4">B × (2M−1)</tspan></text>
+      <text x="740" y="186" text-anchor="middle" fill="#94a3b8" font-size="8">5-vector for M = 3 example</text>
+      <text x="740" y="208" text-anchor="middle" fill="#fbbf24" font-size="8">e.g. [1.20, −0.60, 0.10, 1.50, 0.40]</text>
+
+      <!-- Softmax -->
+      <rect x="940" y="120" width="250" height="100" rx="6" fill="#0f172a"/>
+      <rect x="940" y="120" width="250" height="100" rx="6" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="1065" y="144" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">ω̂ = softmax(logits)</text>
+      <text x="1065" y="166" text-anchor="middle" fill="#fda4af" font-size="11">ω̂ ∈ Δ<tspan font-size="8" dy="-4">2M−1</tspan></text>
+      <text x="1065" y="186" text-anchor="middle" fill="#94a3b8" font-size="8">probability simplex</text>
+      <text x="1065" y="208" text-anchor="middle" fill="#fbbf24" font-size="8">[0.30, 0.05, 0.10, 0.40, 0.15]</text>
+
+      <!-- Top-M -->
+      <rect x="1260" y="120" width="100" height="100" rx="6" fill="#0f172a"/>
+      <rect x="1260" y="120" width="100" height="100" rx="6" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="1310" y="144" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">top-M</text>
+      <text x="1310" y="162" text-anchor="middle" fill="#94a3b8" font-size="8">M = 3</text>
+      <text x="1310" y="184" text-anchor="middle" fill="#ddd6fe" font-size="9">torch.topk</text>
+      <text x="1310" y="206" text-anchor="middle" fill="#94a3b8" font-size="7">indices, values</text>
+
+      <!-- Annotation under row 1 -->
+      <text x="700" y="255" text-anchor="middle" fill="#fbbf24" font-size="9" letter-spacing="0.04em">Forward pass: h → G·h → softmax → top-M    ·    O((2M−1)·d) per token  ·  routing computed once on [CLS] only</text>
+      <text x="700" y="272" text-anchor="middle" fill="#94a3b8" font-size="8">Indices have no gradient (straight-through); values carry gradient back into G via softmax</text>
+
+      <!-- ============== ROW 2: Slot anatomy (2M-1 slots with internal/external partition) ============== -->
+      <text x="40" y="320" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ ROUTER SLOT ANATOMY · output dimension 2M − 1 = 5</text>
+
+      <!-- 5 slot boxes -->
+      <!-- Internal slots (slot 0,1,2 → assigned expert) -->
+      <rect x="100" y="350" width="170" height="120" rx="6" fill="#0f172a"/>
+      <rect x="100" y="350" width="170" height="120" rx="6" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="185" y="372" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">slot p = 0</text>
+      <text x="185" y="388" text-anchor="middle" fill="#94a3b8" font-size="8">→ assigned expert</text>
+      <rect x="118" y="398" width="134" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="185" y="413" text-anchor="middle" fill="#ddd6fe" font-size="9">→ E_0  (assigned)</text>
+      <text x="185" y="437" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="700">ω̂_0 = 0.30</text>
+      <text x="185" y="455" text-anchor="middle" fill="#94a3b8" font-size="7">internal slot · M of them</text>
+
+      <rect x="280" y="350" width="170" height="120" rx="6" fill="#0f172a"/>
+      <rect x="280" y="350" width="170" height="120" rx="6" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="365" y="372" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">slot p = 1</text>
+      <text x="365" y="388" text-anchor="middle" fill="#94a3b8" font-size="8">→ assigned expert</text>
+      <rect x="298" y="398" width="134" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="365" y="413" text-anchor="middle" fill="#ddd6fe" font-size="9">→ E_0  (assigned)</text>
+      <text x="365" y="437" text-anchor="middle" fill="#94a3b8" font-size="11">ω̂_1 = 0.05</text>
+      <text x="365" y="455" text-anchor="middle" fill="#94a3b8" font-size="7">internal slot</text>
+
+      <rect x="460" y="350" width="170" height="120" rx="6" fill="#0f172a"/>
+      <rect x="460" y="350" width="170" height="120" rx="6" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="545" y="372" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">slot p = 2</text>
+      <text x="545" y="388" text-anchor="middle" fill="#94a3b8" font-size="8">→ assigned expert</text>
+      <rect x="478" y="398" width="134" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="545" y="413" text-anchor="middle" fill="#ddd6fe" font-size="9">→ E_0  (assigned)</text>
+      <text x="545" y="437" text-anchor="middle" fill="#94a3b8" font-size="11">ω̂_2 = 0.10</text>
+      <text x="545" y="455" text-anchor="middle" fill="#94a3b8" font-size="7">internal slot</text>
+
+      <!-- visual separator -->
+      <line x1="650" y1="350" x2="650" y2="470" stroke="#475569" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <text x="650" y="345" text-anchor="middle" fill="#94a3b8" font-size="8">│ M = 3 internal │ M − 1 = 2 external │</text>
+
+      <!-- External slots -->
+      <rect x="670" y="350" width="170" height="120" rx="6" fill="#0f172a"/>
+      <rect x="670" y="350" width="170" height="120" rx="6" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="755" y="372" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">slot p = 3</text>
+      <text x="755" y="388" text-anchor="middle" fill="#94a3b8" font-size="8">→ other_experts[0]</text>
+      <rect x="688" y="398" width="134" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="755" y="413" text-anchor="middle" fill="#ddd6fe" font-size="9">→ E_1  (external)</text>
+      <text x="755" y="437" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="700">ω̂_3 = 0.40</text>
+      <text x="755" y="455" text-anchor="middle" fill="#94a3b8" font-size="7">external · M − 1 of them</text>
+
+      <rect x="850" y="350" width="170" height="120" rx="6" fill="#0f172a"/>
+      <rect x="850" y="350" width="170" height="120" rx="6" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="935" y="372" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">slot p = 4</text>
+      <text x="935" y="388" text-anchor="middle" fill="#94a3b8" font-size="8">→ other_experts[1]</text>
+      <rect x="868" y="398" width="134" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="935" y="413" text-anchor="middle" fill="#ddd6fe" font-size="9">→ E_2  (external)</text>
+      <text x="935" y="437" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="700">ω̂_4 = 0.15</text>
+      <text x="935" y="455" text-anchor="middle" fill="#94a3b8" font-size="7">external</text>
+
+      <!-- Proof of guarantee on the right side -->
+      <rect x="1050" y="350" width="310" height="180" rx="10" fill="rgba(120,53,15,0.18)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="1205" y="372" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="700">▸ ASSIGNED-EXPERT GUARANTEE (proof sketch)</text>
+      <text x="1205" y="394" text-anchor="middle" fill="#e2e8f0" font-size="9">Top-M selects M slots from 2M − 1.</text>
+      <text x="1205" y="410" text-anchor="middle" fill="#e2e8f0" font-size="9">External block has only M − 1 slots.</text>
+      <text x="1205" y="430" text-anchor="middle" fill="#fbbf24" font-size="9">|S| = M  >  M − 1 = |external|</text>
+      <text x="1205" y="448" text-anchor="middle" fill="#cbd5e1" font-size="9">⇒ S ∩ {internal} ≠ ∅</text>
+      <text x="1205" y="468" text-anchor="middle" fill="#34d399" font-size="9">⇒ assigned expert ALWAYS active</text>
+      <text x="1205" y="490" text-anchor="middle" fill="#94a3b8" font-size="8">collapse at assigned slot is structurally</text>
+      <text x="1205" y="504" text-anchor="middle" fill="#94a3b8" font-size="8">impossible — no auxiliary loss needed</text>
+      <text x="1205" y="522" text-anchor="middle" fill="#fda4af" font-size="8">2M − 1 is the minimal such output dim</text>
+
+      <text x="700" y="500" text-anchor="middle" fill="#94a3b8" font-size="8">slot index → expert ID:   p &lt; M  ↦  assigned   ·   p ≥ M  ↦  other_experts[p − M]   (sorted [0, n_experts) \ {assigned})</text>
+
+      <!-- ============== ROW 3: top-M selection + mapping ============== -->
+      <text x="40" y="568" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ TOP-M SELECTION  &  INDEX → EXPERT MAPPING</text>
+
+      <rect x="40" y="590" width="640" height="200" rx="10" fill="rgba(76,29,149,0.22)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="360" y="612" text-anchor="middle" fill="#ddd6fe" font-size="10" font-weight="600">top_values, top_indices = torch.topk(ω̂, M)</text>
+
+      <!-- bar chart of ω̂ with top-3 highlighted -->
+      <g transform="translate(80, 630)">
+        <!-- slot 0: 0.30 → height 90 -->
+        <rect x="0" y="60" width="60" height="90" fill="rgba(34,211,238,0.55)" stroke="#22d3ee" stroke-width="1.3"/>
+        <text x="30" y="170" text-anchor="middle" fill="#67e8f9" font-size="8">slot 0</text>
+        <text x="30" y="183" text-anchor="middle" fill="#94a3b8" font-size="7">0.30</text>
+        <!-- selected mark -->
+        <text x="30" y="50" text-anchor="middle" fill="#34d399" font-size="11" font-weight="700">★</text>
+
+        <rect x="80" y="135" width="60" height="15" fill="rgba(34,211,238,0.2)" stroke="#22d3ee" stroke-width="1.3"/>
+        <text x="110" y="170" text-anchor="middle" fill="#67e8f9" font-size="8">slot 1</text>
+        <text x="110" y="183" text-anchor="middle" fill="#94a3b8" font-size="7">0.05</text>
+
+        <rect x="160" y="120" width="60" height="30" fill="rgba(34,211,238,0.25)" stroke="#22d3ee" stroke-width="1.3"/>
+        <text x="190" y="170" text-anchor="middle" fill="#67e8f9" font-size="8">slot 2</text>
+        <text x="190" y="183" text-anchor="middle" fill="#94a3b8" font-size="7">0.10</text>
+
+        <rect x="240" y="30" width="60" height="120" fill="rgba(251,113,133,0.55)" stroke="#fb7185" stroke-width="1.3"/>
+        <text x="270" y="170" text-anchor="middle" fill="#fda4af" font-size="8">slot 3</text>
+        <text x="270" y="183" text-anchor="middle" fill="#94a3b8" font-size="7">0.40</text>
+        <text x="270" y="20" text-anchor="middle" fill="#34d399" font-size="11" font-weight="700">★</text>
+
+        <rect x="320" y="105" width="60" height="45" fill="rgba(251,113,133,0.4)" stroke="#fb7185" stroke-width="1.3"/>
+        <text x="350" y="170" text-anchor="middle" fill="#fda4af" font-size="8">slot 4</text>
+        <text x="350" y="183" text-anchor="middle" fill="#94a3b8" font-size="7">0.15</text>
+        <text x="350" y="95" text-anchor="middle" fill="#34d399" font-size="11" font-weight="700">★</text>
+
+        <!-- axis -->
+        <line x1="-10" y1="150" x2="390" y2="150" stroke="#475569" stroke-width="1"/>
+
+        <!-- annotation -->
+        <text x="190" y="-10" text-anchor="middle" fill="#cbd5e1" font-size="9">ω̂ = softmax(G·h)</text>
+        <text x="430" y="80" fill="#34d399" font-size="9">★ top-3</text>
+        <text x="430" y="95" fill="#94a3b8" font-size="7">{3, 0, 4}</text>
+        <text x="430" y="115" fill="#cbd5e1" font-size="7">values:</text>
+        <text x="430" y="128" fill="#94a3b8" font-size="7">[0.40, 0.30, 0.15]</text>
+      </g>
+
+      <!-- Mapping table -->
+      <rect x="700" y="590" width="660" height="200" rx="10" fill="rgba(6,78,59,0.25)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="1030" y="612" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">_map_to_expert_indices(top_indices)  ·  per-batch-row</text>
+
+      <!-- table headers -->
+      <g font-family="JetBrains Mono" font-size="9">
+        <text x="730" y="640" fill="#94a3b8">slot p</text>
+        <text x="830" y="640" fill="#94a3b8">ω̂_p</text>
+        <text x="930" y="640" fill="#94a3b8">rule</text>
+        <text x="1130" y="640" fill="#94a3b8">→ expert e</text>
+        <text x="1280" y="640" fill="#94a3b8">selected?</text>
+        <line x1="720" y1="648" x2="1340" y2="648" stroke="#475569" stroke-width="0.7"/>
+
+        <text x="730" y="666" fill="#67e8f9">0</text>
+        <text x="830" y="666" fill="#fbbf24">0.30</text>
+        <text x="930" y="666" fill="#cbd5e1">p &lt; M</text>
+        <text x="1130" y="666" fill="#ddd6fe">E_0  (assigned)</text>
+        <text x="1280" y="666" fill="#34d399">★ yes</text>
+
+        <text x="730" y="684" fill="#67e8f9">1</text>
+        <text x="830" y="684" fill="#94a3b8">0.05</text>
+        <text x="930" y="684" fill="#cbd5e1">p &lt; M</text>
+        <text x="1130" y="684" fill="#ddd6fe">E_0  (assigned)</text>
+        <text x="1280" y="684" fill="#64748b">no</text>
+
+        <text x="730" y="702" fill="#67e8f9">2</text>
+        <text x="830" y="702" fill="#94a3b8">0.10</text>
+        <text x="930" y="702" fill="#cbd5e1">p &lt; M</text>
+        <text x="1130" y="702" fill="#ddd6fe">E_0  (assigned)</text>
+        <text x="1280" y="702" fill="#64748b">no</text>
+
+        <text x="730" y="720" fill="#fda4af">3</text>
+        <text x="830" y="720" fill="#fbbf24">0.40</text>
+        <text x="930" y="720" fill="#cbd5e1">p ≥ M ⇒ other[0]</text>
+        <text x="1130" y="720" fill="#ddd6fe">E_1  (external)</text>
+        <text x="1280" y="720" fill="#34d399">★ yes</text>
+
+        <text x="730" y="738" fill="#fda4af">4</text>
+        <text x="830" y="738" fill="#fbbf24">0.15</text>
+        <text x="930" y="738" fill="#cbd5e1">p ≥ M ⇒ other[1]</text>
+        <text x="1130" y="738" fill="#ddd6fe">E_2  (external)</text>
+        <text x="1280" y="738" fill="#34d399">★ yes</text>
+
+        <line x1="720" y1="750" x2="1340" y2="750" stroke="#475569" stroke-width="0.7"/>
+      </g>
+
+      <text x="1030" y="770" text-anchor="middle" fill="#94a3b8" font-size="8">selected: slots {0, 3, 4} ↦ expert_indices = [0, 1, 2] · top_values = [0.30, 0.40, 0.15]</text>
+      <text x="1030" y="784" text-anchor="middle" fill="#fbbf24" font-size="8">aggregate per expert: E_0 ← 0.30 (sum of slot-0 in selection)   ·   E_1 ← 0.40   ·   E_2 ← 0.15</text>
+
+      <!-- ============== ROW 4: Weighted expert combination (LoRA application) ============== -->
+      <text x="40" y="820" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ WEIGHTED EXPERT COMBINATION  ·  applied at every LoRAMoELinear (q, v) of every transformer layer</text>
+
+      <rect x="40" y="840" width="1320" height="160" rx="10" fill="rgba(76,29,149,0.2)" stroke="#a78bfa" stroke-width="1.5"/>
+
+      <!-- Equation banner -->
+      <rect x="60" y="858" width="1280" height="42" rx="6" fill="rgba(15,23,42,0.7)" stroke="#cbd5e1" stroke-width="0.8"/>
+      <text x="700" y="884" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="600">y(x) = W₀x  +  (α/r) · [ 0.30 · B₀A₀ x  +  0.40 · B₁A₁ x  +  0.15 · B₂A₂ x ]</text>
+
+      <!-- Expert contribution cards -->
+      <rect x="80" y="910" width="380" height="80" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+      <text x="270" y="930" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="600">E_0  (assigned · always present)</text>
+      <text x="270" y="948" text-anchor="middle" fill="#cbd5e1" font-size="9">contribution = 0.30 · B_0 A_0 x</text>
+      <text x="270" y="965" text-anchor="middle" fill="#94a3b8" font-size="8">guaranteed via structural prior</text>
+      <text x="270" y="980" text-anchor="middle" fill="#34d399" font-size="8">∇ flows into A_0, B_0 every batch</text>
+
+      <rect x="490" y="910" width="380" height="80" rx="6" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1.3"/>
+      <text x="680" y="930" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="600">E_1  (external · selected by router)</text>
+      <text x="680" y="948" text-anchor="middle" fill="#cbd5e1" font-size="9">contribution = 0.40 · B_1 A_1 x</text>
+      <text x="680" y="965" text-anchor="middle" fill="#94a3b8" font-size="8">cross-cluster knowledge borrowed</text>
+      <text x="680" y="980" text-anchor="middle" fill="#fbbf24" font-size="8">∇ flows only when selected</text>
+
+      <rect x="900" y="910" width="380" height="80" rx="6" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1.3"/>
+      <text x="1090" y="930" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="600">E_2  (external · selected by router)</text>
+      <text x="1090" y="948" text-anchor="middle" fill="#cbd5e1" font-size="9">contribution = 0.15 · B_2 A_2 x</text>
+      <text x="1090" y="965" text-anchor="middle" fill="#94a3b8" font-size="8">router picks adaptively per input</text>
+      <text x="1090" y="980" text-anchor="middle" fill="#fbbf24" font-size="8">router learns when to borrow</text>
+
+      <!-- legend -->
+      <g font-size="9" font-family="JetBrains Mono">
+        <text x="40" y="1024" fill="#94a3b8" font-weight="600" letter-spacing="0.1em">LEGEND</text>
+        <rect x="110" y="1018" width="10" height="10" rx="2" fill="rgba(8,51,68,0.5)" stroke="#22d3ee"/><text x="128" y="1027" fill="#cbd5e1">internal slot → assigned expert</text>
+        <rect x="370" y="1018" width="10" height="10" rx="2" fill="rgba(136,19,55,0.4)" stroke="#fb7185"/><text x="388" y="1027" fill="#cbd5e1">external slot → other expert</text>
+        <rect x="610" y="1018" width="10" height="10" rx="2" fill="rgba(76,29,149,0.45)" stroke="#a78bfa"/><text x="628" y="1027" fill="#cbd5e1">LoRA expert E_e = (A_e, B_e)</text>
+        <text x="860" y="1027" fill="#34d399">★ selected by top-M</text>
+        <text x="1020" y="1027" fill="#fbbf24">orange = router weight ω̂_p</text>
+      </g>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_4 -->
+
+  <!-- ============================ DIAGRAM 5: FEDERATED TRAINING ROUND ============================ -->
+  <section class="section">
+    <h2><span class="num">5</span>Phase B · Federated Training Round (synchronous protocol, T = 25 rounds)</h2>
+    <p class="desc">A single round of the iterative training phase: broadcast → local LoRA-MoE training → upload of <em>only the assigned expert</em> + router → cluster-wise weighted averaging. Trainable surface ≈ 0.27% of FinBERT; upload per client per round ≈ 600 KB at fp32.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 880" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid5" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah5" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24"/></marker>
+        <marker id="ah5r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/></marker>
+      </defs>
+      <rect width="1400" height="880" fill="url(#grid5)"/>
+
+      <!-- timeline arrows -->
+      <line x1="200" y1="200" x2="280" y2="200" stroke="#fbbf24" stroke-width="1.4" marker-end="url(#ah5)"/>
+      <line x1="500" y1="200" x2="580" y2="200" stroke="#fbbf24" stroke-width="1.4" marker-end="url(#ah5)"/>
+      <line x1="800" y1="200" x2="880" y2="200" stroke="#fbbf24" stroke-width="1.4" marker-end="url(#ah5)"/>
+      <line x1="1100" y1="200" x2="1180" y2="200" stroke="#fbbf24" stroke-width="1.4" marker-end="url(#ah5)"/>
+      <!-- broadcast/upload arrows -->
+      <line x1="160" y1="370" x2="160" y2="430" stroke="#fbbf24" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#ah5)"/>
+      <line x1="940" y1="430" x2="940" y2="370" stroke="#fb7185" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#ah5r)"/>
+      <!-- loop back arrow at right -->
+      <path d="M 1320 200 Q 1380 200 1380 600 Q 1380 740 700 740 Q 80 740 80 200 Q 80 140 120 140" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#ah5)"/>
+
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">PHASE B · ONE COMPLETE FEDERATED ROUND  (t → t + 1)</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">synchronous protocol · round runs T = 25 times</text>
+
+      <!-- Round counter banner -->
+      <rect x="40" y="76" width="1320" height="28" rx="6" fill="rgba(120,53,15,0.15)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="6,4"/>
+      <text x="700" y="95" text-anchor="middle" fill="#fbbf24" font-size="10" letter-spacing="0.08em">▸ ROUND t ▸  ① BROADCAST  →  ② LOCAL TRAIN  →  ③ UPLOAD  →  ④ CLUSTER-WISE AGGREGATE  →  ⑤ COMMIT NEW STATE  ▸ ROUND t + 1 ▸</text>
+
+      <!-- ============================ TOP TIMELINE: 5 STAGE BOXES ============================ -->
+      <!-- ① Server state at start of round -->
+      <rect x="40" y="140" width="160" height="120" rx="8" fill="#0f172a"/>
+      <rect x="40" y="140" width="160" height="120" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="120" y="162" text-anchor="middle" fill="#fef3c7" font-size="11" font-weight="700">① Server state</text>
+      <text x="120" y="178" text-anchor="middle" fill="#94a3b8" font-size="8">at start of round t</text>
+      <rect x="58" y="190" width="124" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.7"/><text x="120" y="205" text-anchor="middle" fill="#ddd6fe" font-size="8">(A_0^t, B_0^t)</text>
+      <rect x="58" y="216" width="124" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.7"/><text x="120" y="231" text-anchor="middle" fill="#ddd6fe" font-size="8">(A_1^t, B_1^t)</text>
+      <text x="120" y="252" text-anchor="middle" fill="#fbbf24" font-size="8">+ θ_head^t</text>
+
+      <!-- ② Broadcast -->
+      <rect x="280" y="140" width="220" height="120" rx="8" fill="#0f172a"/>
+      <rect x="280" y="140" width="220" height="120" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="390" y="162" text-anchor="middle" fill="#fef3c7" font-size="11" font-weight="700">② Broadcast (downlink)</text>
+      <text x="390" y="180" text-anchor="middle" fill="#94a3b8" font-size="8">server → all 10 clients</text>
+      <text x="390" y="200" text-anchor="middle" fill="#cbd5e1" font-size="9">full expert bank {(A_c^t, B_c^t)}</text>
+      <text x="390" y="216" text-anchor="middle" fill="#cbd5e1" font-size="9">classifier head θ_head^t</text>
+      <text x="390" y="240" text-anchor="middle" fill="#fb7185" font-size="8">~600 KB / client · N × down</text>
+      <text x="390" y="254" text-anchor="middle" fill="#94a3b8" font-size="7">federated/server.py · broadcast()</text>
+
+      <!-- ③ Local training -->
+      <rect x="580" y="140" width="220" height="120" rx="8" fill="#0f172a"/>
+      <rect x="580" y="140" width="220" height="120" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="690" y="162" text-anchor="middle" fill="#d1fae5" font-size="11" font-weight="700">③ Local Training</text>
+      <text x="690" y="180" text-anchor="middle" fill="#94a3b8" font-size="8">2 epochs · AdamW · bs 32</text>
+      <text x="690" y="200" text-anchor="middle" fill="#cbd5e1" font-size="9">FedLEASEFinBERT.forward()</text>
+      <text x="690" y="216" text-anchor="middle" fill="#cbd5e1" font-size="9">adaptive top-M routing per batch</text>
+      <text x="690" y="240" text-anchor="middle" fill="#6ee7b7" font-size="8">∇ → assigned expert + router</text>
+      <text x="690" y="254" text-anchor="middle" fill="#94a3b8" font-size="7">federated/client.py · local_train()</text>
+
+      <!-- ④ Upload -->
+      <rect x="880" y="140" width="220" height="120" rx="8" fill="#0f172a"/>
+      <rect x="880" y="140" width="220" height="120" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="990" y="162" text-anchor="middle" fill="#fef3c7" font-size="11" font-weight="700">④ Upload (uplink)</text>
+      <text x="990" y="180" text-anchor="middle" fill="#94a3b8" font-size="8">all clients → server</text>
+      <text x="990" y="200" text-anchor="middle" fill="#cbd5e1" font-size="9">assigned-expert (ΔA, ΔB) only</text>
+      <text x="990" y="216" text-anchor="middle" fill="#cbd5e1" font-size="9">router gate G_i + n_i</text>
+      <text x="990" y="240" text-anchor="middle" fill="#fb7185" font-size="8">~600 KB / client · N × up</text>
+      <text x="990" y="254" text-anchor="middle" fill="#94a3b8" font-size="7">other experts NOT uploaded</text>
+
+      <!-- ⑤ Aggregate -->
+      <rect x="1180" y="140" width="180" height="120" rx="8" fill="#0f172a"/>
+      <rect x="1180" y="140" width="180" height="120" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="1270" y="162" text-anchor="middle" fill="#fef3c7" font-size="11" font-weight="700">⑤ Aggregate → t + 1</text>
+      <text x="1270" y="180" text-anchor="middle" fill="#94a3b8" font-size="8">cluster-wise FedAvg</text>
+      <text x="1270" y="200" text-anchor="middle" fill="#cbd5e1" font-size="9">A_c^{t+1} = Σ (n_i/n_c) A_i</text>
+      <text x="1270" y="216" text-anchor="middle" fill="#cbd5e1" font-size="9">B_c^{t+1} = Σ (n_i/n_c) B_i</text>
+      <text x="1270" y="240" text-anchor="middle" fill="#34d399" font-size="8">no cross-cluster average</text>
+      <text x="1270" y="254" text-anchor="middle" fill="#94a3b8" font-size="7">federated/aggregation.py</text>
+
+      <!-- ============================ MID: CLIENT FAN-OUT (broadcast) ============================ -->
+      <text x="40" y="298" fill="#34d399" font-size="10" font-weight="600" letter-spacing="0.1em">▸ CLIENT-SIDE DETAIL · what happens at each of the 10 clients during stage ③</text>
+
+      <!-- Two cluster panels -->
+      <rect x="40" y="320" width="640" height="280" rx="10" fill="rgba(8,51,68,0.18)" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="360" y="342" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">cluster 0  ·  PhraseBank-register  ·  c(i) = 0  ·  clients C0 … C4</text>
+
+      <!-- 5 client mini cards in cluster 0 -->
+      <g font-family="JetBrains Mono">
+        <g><rect x="60" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="60" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="115" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C0</text>
+          <rect x="72" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="115" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="72" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="115" y="425" text-anchor="middle" fill="#ddd6fe" font-size="7">E_0 (∇✓)</text>
+          <rect x="72" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="115" y="447" text-anchor="middle" fill="#94a3b8" font-size="7">E_1 (∇ rare)</text>
+          <rect x="72" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="115" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_0</text>
+          <text x="115" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_0 · 317 ex</text>
+          <text x="115" y="508" text-anchor="middle" fill="#34d399" font-size="7">2 epochs</text>
+          <text x="115" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_0, ΔB_0)</text>
+          <text x="115" y="540" text-anchor="middle" fill="#fbbf24" font-size="7">↑ G_0, n_0</text>
+        </g>
+        <g><rect x="180" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="180" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="235" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C1</text>
+          <rect x="192" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="235" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="192" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="235" y="425" text-anchor="middle" fill="#ddd6fe" font-size="7">E_0 (∇✓)</text>
+          <rect x="192" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="235" y="447" text-anchor="middle" fill="#94a3b8" font-size="7">E_1 (∇ rare)</text>
+          <rect x="192" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="235" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_1</text>
+          <text x="235" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_1</text>
+          <text x="235" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_0, ΔB_0)</text>
+        </g>
+        <g><rect x="300" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="300" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="355" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C2</text>
+          <rect x="312" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="355" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="312" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="355" y="425" text-anchor="middle" fill="#ddd6fe" font-size="7">E_0 (∇✓)</text>
+          <rect x="312" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="355" y="447" text-anchor="middle" fill="#94a3b8" font-size="7">E_1 (∇ rare)</text>
+          <rect x="312" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="355" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_2</text>
+          <text x="355" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_2</text>
+          <text x="355" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_0, ΔB_0)</text>
+        </g>
+        <g><rect x="420" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="420" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="475" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C3</text>
+          <rect x="432" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="475" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="432" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="475" y="425" text-anchor="middle" fill="#ddd6fe" font-size="7">E_0 (∇✓)</text>
+          <rect x="432" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="475" y="447" text-anchor="middle" fill="#94a3b8" font-size="7">E_1 (∇ rare)</text>
+          <rect x="432" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="475" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_3</text>
+          <text x="475" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_3</text>
+          <text x="475" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_0, ΔB_0)</text>
+        </g>
+        <g><rect x="540" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="540" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="595" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C4</text>
+          <rect x="552" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="595" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="552" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="595" y="425" text-anchor="middle" fill="#ddd6fe" font-size="7">E_0 (∇✓)</text>
+          <rect x="552" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="595" y="447" text-anchor="middle" fill="#94a3b8" font-size="7">E_1 (∇ rare)</text>
+          <rect x="552" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="595" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_4</text>
+          <text x="595" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_4</text>
+          <text x="595" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_0, ΔB_0)</text>
+        </g>
+      </g>
+
+      <rect x="700" y="320" width="660" height="280" rx="10" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="1030" y="342" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">cluster 1  ·  Twitter-register  ·  c(i) = 1  ·  clients C5 … C9</text>
+
+      <g font-family="JetBrains Mono">
+        <g><rect x="720" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="720" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="775" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C5</text>
+          <rect x="732" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="775" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="732" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="775" y="425" text-anchor="middle" fill="#94a3b8" font-size="7">E_0 (∇ rare)</text>
+          <rect x="732" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="775" y="447" text-anchor="middle" fill="#ddd6fe" font-size="7">E_1 (∇✓)</text>
+          <rect x="732" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="775" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_5</text>
+          <text x="775" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_5 · 1670 ex</text>
+          <text x="775" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_1, ΔB_1)</text>
+          <text x="775" y="540" text-anchor="middle" fill="#fbbf24" font-size="7">↑ G_5, n_5</text>
+        </g>
+        <g><rect x="840" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="840" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="895" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C6</text>
+          <rect x="852" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="895" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="852" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="895" y="425" text-anchor="middle" fill="#94a3b8" font-size="7">E_0 (∇ rare)</text>
+          <rect x="852" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="895" y="447" text-anchor="middle" fill="#ddd6fe" font-size="7">E_1 (∇✓)</text>
+          <rect x="852" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="895" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_6</text>
+          <text x="895" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_6</text>
+          <text x="895" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_1, ΔB_1)</text>
+        </g>
+        <g><rect x="960" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="960" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="1015" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C7</text>
+          <rect x="972" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="1015" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="972" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="1015" y="425" text-anchor="middle" fill="#94a3b8" font-size="7">E_0 (∇ rare)</text>
+          <rect x="972" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="1015" y="447" text-anchor="middle" fill="#ddd6fe" font-size="7">E_1 (∇✓)</text>
+          <rect x="972" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="1015" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_7</text>
+          <text x="1015" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_7</text>
+          <text x="1015" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_1, ΔB_1)</text>
+        </g>
+        <g><rect x="1080" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="1080" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="1135" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C8</text>
+          <rect x="1092" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="1135" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="1092" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="1135" y="425" text-anchor="middle" fill="#94a3b8" font-size="7">E_0 (∇ rare)</text>
+          <rect x="1092" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="1135" y="447" text-anchor="middle" fill="#ddd6fe" font-size="7">E_1 (∇✓)</text>
+          <rect x="1092" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="1135" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_8</text>
+          <text x="1135" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_8</text>
+          <text x="1135" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_1, ΔB_1)</text>
+        </g>
+        <g><rect x="1200" y="360" width="110" height="220" rx="6" fill="#0f172a"/>
+          <rect x="1200" y="360" width="110" height="220" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.2"/>
+          <text x="1255" y="380" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">C9</text>
+          <rect x="1212" y="390" width="86" height="18" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.5"/><text x="1255" y="403" text-anchor="middle" fill="#94a3b8" font-size="7">FinBERT frozen</text>
+          <rect x="1212" y="412" width="86" height="18" rx="3" fill="rgba(76,29,149,0.25)" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="2,2"/><text x="1255" y="425" text-anchor="middle" fill="#94a3b8" font-size="7">E_0 (∇ rare)</text>
+          <rect x="1212" y="434" width="86" height="18" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.6"/><text x="1255" y="447" text-anchor="middle" fill="#ddd6fe" font-size="7">E_1 (∇✓)</text>
+          <rect x="1212" y="456" width="86" height="18" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.7"/><text x="1255" y="469" text-anchor="middle" fill="#fda4af" font-size="7">router G_9</text>
+          <text x="1255" y="492" text-anchor="middle" fill="#94a3b8" font-size="7">D_9</text>
+          <text x="1255" y="525" text-anchor="middle" fill="#fbbf24" font-size="7">↑ (ΔA_1, ΔB_1)</text>
+        </g>
+      </g>
+
+      <!-- ============================ BOTTOM: parameter classification table ============================ -->
+      <text x="40" y="638" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">▸ PARAMETER CLASSIFICATION TABLE  ·  what moves, what trains, what stays put</text>
+
+      <rect x="40" y="656" width="1320" height="140" rx="10" fill="rgba(15,23,42,0.6)" stroke="#475569" stroke-width="1"/>
+
+      <g font-family="JetBrains Mono" font-size="9">
+        <!-- header row -->
+        <text x="220" y="678" text-anchor="middle" fill="#fbbf24" font-weight="700">Parameter group</text>
+        <text x="600" y="678" text-anchor="middle" fill="#fbbf24" font-weight="700">Trainable?</text>
+        <text x="820" y="678" text-anchor="middle" fill="#fbbf24" font-weight="700">Uploaded?</text>
+        <text x="1100" y="678" text-anchor="middle" fill="#fbbf24" font-weight="700">Aggregation scope</text>
+        <line x1="60" y1="684" x2="1340" y2="684" stroke="#475569" stroke-width="0.7"/>
+
+        <text x="80" y="702" fill="#cbd5e1">FinBERT embeddings · encoder W₀</text>
+        <text x="600" y="702" text-anchor="middle" fill="#fb7185">✗ frozen</text>
+        <text x="820" y="702" text-anchor="middle" fill="#fb7185">✗ never</text>
+        <text x="1100" y="702" text-anchor="middle" fill="#94a3b8">—</text>
+
+        <text x="80" y="720" fill="#cbd5e1">LoRA (A_c, B_c) — assigned expert for client i (c = c(i))</text>
+        <text x="600" y="720" text-anchor="middle" fill="#34d399">✓ yes</text>
+        <text x="820" y="720" text-anchor="middle" fill="#34d399">✓ yes</text>
+        <text x="1100" y="720" text-anchor="middle" fill="#a78bfa">cluster-wise weighted</text>
+
+        <text x="80" y="738" fill="#cbd5e1">LoRA (A_c, B_c) — other experts (c ≠ c(i))</text>
+        <text x="600" y="738" text-anchor="middle" fill="#fbbf24">✓ when sampled</text>
+        <text x="820" y="738" text-anchor="middle" fill="#fb7185">✗ not uploaded</text>
+        <text x="1100" y="738" text-anchor="middle" fill="#94a3b8">overwritten at next broadcast</text>
+
+        <text x="80" y="756" fill="#cbd5e1">Router gate G_i</text>
+        <text x="600" y="756" text-anchor="middle" fill="#34d399">✓ yes</text>
+        <text x="820" y="756" text-anchor="middle" fill="#34d399">✓ yes (small)</text>
+        <text x="1100" y="756" text-anchor="middle" fill="#94a3b8">per-client (no aggregate)</text>
+
+        <text x="80" y="774" fill="#cbd5e1">Classifier head θ_head</text>
+        <text x="600" y="774" text-anchor="middle" fill="#34d399">✓ yes</text>
+        <text x="820" y="774" text-anchor="middle" fill="#34d399">✓ yes</text>
+        <text x="1100" y="774" text-anchor="middle" fill="#fbbf24">global FedAvg (n_i weighted)</text>
+      </g>
+
+      <text x="700" y="828" text-anchor="middle" fill="#94a3b8" font-size="9" letter-spacing="0.05em">↻ loop back to ① ·  T = 25 rounds total  ·  end-of-run: evaluate on PhraseBank-test + Twitter-test (Diagram 7)</text>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_5 -->
+
+  <!-- ============================ DIAGRAM 6: LoRA INTEGRATION INSIDE FINBERT ============================ -->
+  <section class="section">
+    <h2><span class="num">6</span>LoRA Integration inside the FinBERT Transformer Layer</h2>
+    <p class="desc">Zoom into one of FinBERT's 12 transformer layers. The frozen 768×768 query and value projections are augmented in parallel with a <em>set of M rank-r LoRA experts</em>. The per-input router (Diagram 4) selects M of them with weights ω̂. The full update equation is shown bottom-centre.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 880" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid6" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah6" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/></marker>
+        <marker id="ah6v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/></marker>
+        <marker id="ah6c" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/></marker>
+        <marker id="ah6e" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/></marker>
+      </defs>
+      <rect width="1400" height="880" fill="url(#grid6)"/>
+
+      <!-- arrows -->
+      <!-- input x splits into 4 paths: W_q (frozen), W_v (frozen), LoRA-q, LoRA-v -->
+      <line x1="200" y1="200" x2="280" y2="200" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#ah6c)"/>
+      <line x1="200" y1="200" x2="200" y2="310" stroke="#22d3ee" stroke-width="1.3"/>
+      <line x1="200" y1="200" x2="200" y2="430" stroke="#22d3ee" stroke-width="1.3"/>
+      <line x1="200" y1="200" x2="200" y2="560" stroke="#22d3ee" stroke-width="1.3"/>
+      <line x1="200" y1="310" x2="280" y2="310" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah6c)"/>
+      <line x1="200" y1="430" x2="280" y2="430" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah6c)"/>
+      <line x1="200" y1="560" x2="280" y2="560" stroke="#22d3ee" stroke-width="1.3" marker-end="url(#ah6c)"/>
+
+      <!-- Q path arrows: W_q + LoRA → sum → attention -->
+      <line x1="540" y1="200" x2="660" y2="265" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ah6)"/>
+      <line x1="730" y1="310" x2="660" y2="290" stroke="#a78bfa" stroke-width="1.2" marker-end="url(#ah6v)"/>
+      <!-- V path arrows -->
+      <line x1="540" y1="430" x2="660" y2="365" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#ah6)"/>
+      <line x1="730" y1="560" x2="660" y2="395" stroke="#a78bfa" stroke-width="1.2" marker-end="url(#ah6v)"/>
+      <!-- attention out -->
+      <line x1="780" y1="330" x2="900" y2="330" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#ah6)"/>
+      <line x1="1080" y1="330" x2="1190" y2="330" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#ah6)"/>
+
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">LoRA-MoE INSIDE A FINBERT TRANSFORMER LAYER (one of 12)</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">models/lora_layers.py · LoRAMoELinear  ·  applied to {query, value} projections</text>
+
+      <!-- Input -->
+      <rect x="40" y="170" width="160" height="60" rx="6" fill="#0f172a"/>
+      <rect x="40" y="170" width="160" height="60" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="120" y="192" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">input hidden</text>
+      <text x="120" y="210" text-anchor="middle" fill="#67e8f9" font-size="10">x ∈ R<tspan font-size="7" dy="-3">B × L × 768</tspan></text>
+      <text x="120" y="226" text-anchor="middle" fill="#94a3b8" font-size="8">from prev layer / embeddings</text>
+
+      <!-- Frozen W_q box -->
+      <rect x="280" y="170" width="260" height="60" rx="6" fill="#0f172a"/>
+      <rect x="280" y="170" width="260" height="60" rx="6" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="1.5"/>
+      <text x="410" y="192" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">W₀^q · query projection (FROZEN)</text>
+      <text x="410" y="210" text-anchor="middle" fill="#cbd5e1" font-size="9">W₀^q ∈ R<tspan font-size="7" dy="-3">768 × 768</tspan>  ·  pre-trained FinBERT</text>
+      <text x="410" y="225" text-anchor="middle" fill="#fb7185" font-size="8">no gradient · not communicated</text>
+
+      <!-- LoRA-MoE q path (multiple experts) -->
+      <text x="40" y="282" fill="#a78bfa" font-size="9" font-weight="600">▸ LoRA-MoE  ·  query path</text>
+      <rect x="280" y="290" width="450" height="100" rx="8" fill="rgba(76,29,149,0.18)" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="5,4"/>
+      <text x="505" y="310" text-anchor="middle" fill="#ddd6fe" font-size="10" font-weight="600">expert mixture (top-M by router ω̂)</text>
+
+      <!-- M experts (M=2) for q -->
+      <g>
+        <rect x="300" y="324" width="200" height="56" rx="5" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1.1"/>
+        <text x="400" y="342" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">Expert E_0</text>
+        <rect x="312" y="350" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="352" y="365" text-anchor="middle" fill="#ddd6fe" font-size="8">A_0^q  4×768</text>
+        <rect x="400" y="350" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="440" y="365" text-anchor="middle" fill="#ddd6fe" font-size="8">B_0^q  768×4</text>
+      </g>
+      <g>
+        <rect x="510" y="324" width="200" height="56" rx="5" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1.1"/>
+        <text x="610" y="342" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">Expert E_1</text>
+        <rect x="522" y="350" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="562" y="365" text-anchor="middle" fill="#ddd6fe" font-size="8">A_1^q  4×768</text>
+        <rect x="610" y="350" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="650" y="365" text-anchor="middle" fill="#ddd6fe" font-size="8">B_1^q  768×4</text>
+      </g>
+
+      <!-- Frozen W_v box -->
+      <rect x="280" y="400" width="260" height="60" rx="6" fill="#0f172a"/>
+      <rect x="280" y="400" width="260" height="60" rx="6" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="1.5"/>
+      <text x="410" y="422" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">W₀^v · value projection (FROZEN)</text>
+      <text x="410" y="440" text-anchor="middle" fill="#cbd5e1" font-size="9">W₀^v ∈ R<tspan font-size="7" dy="-3">768 × 768</tspan></text>
+      <text x="410" y="455" text-anchor="middle" fill="#fb7185" font-size="8">no gradient · not communicated</text>
+
+      <!-- LoRA-MoE v path -->
+      <text x="40" y="532" fill="#a78bfa" font-size="9" font-weight="600">▸ LoRA-MoE  ·  value path</text>
+      <rect x="280" y="540" width="450" height="100" rx="8" fill="rgba(76,29,149,0.18)" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="5,4"/>
+      <text x="505" y="560" text-anchor="middle" fill="#ddd6fe" font-size="10" font-weight="600">expert mixture (top-M by router ω̂)</text>
+      <g>
+        <rect x="300" y="574" width="200" height="56" rx="5" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1.1"/>
+        <text x="400" y="592" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">Expert E_0</text>
+        <rect x="312" y="600" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="352" y="615" text-anchor="middle" fill="#ddd6fe" font-size="8">A_0^v  4×768</text>
+        <rect x="400" y="600" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="440" y="615" text-anchor="middle" fill="#ddd6fe" font-size="8">B_0^v  768×4</text>
+      </g>
+      <g>
+        <rect x="510" y="574" width="200" height="56" rx="5" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="1.1"/>
+        <text x="610" y="592" text-anchor="middle" fill="#c4b5fd" font-size="10" font-weight="600">Expert E_1</text>
+        <rect x="522" y="600" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="562" y="615" text-anchor="middle" fill="#ddd6fe" font-size="8">A_1^v  4×768</text>
+        <rect x="610" y="600" width="80" height="22" rx="3" fill="rgba(15,23,42,0.7)" stroke="#a78bfa" stroke-width="0.7"/><text x="650" y="615" text-anchor="middle" fill="#ddd6fe" font-size="8">B_1^v  768×4</text>
+      </g>
+
+      <!-- Combined Q and V -->
+      <rect x="780" y="240" width="120" height="60" rx="8" fill="#0f172a"/>
+      <rect x="780" y="240" width="120" height="60" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="840" y="262" text-anchor="middle" fill="#d1fae5" font-size="11" font-weight="600">Q = q · x</text>
+      <text x="840" y="280" text-anchor="middle" fill="#6ee7b7" font-size="9">y_q = W₀^q x + Σ ω̂_e B_e^q A_e^q x</text>
+      <text x="840" y="294" text-anchor="middle" fill="#94a3b8" font-size="7">trainable Δ on top of frozen W₀^q</text>
+
+      <rect x="780" y="360" width="120" height="60" rx="8" fill="#0f172a"/>
+      <rect x="780" y="360" width="120" height="60" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="840" y="382" text-anchor="middle" fill="#d1fae5" font-size="11" font-weight="600">V = v · x</text>
+      <text x="840" y="400" text-anchor="middle" fill="#6ee7b7" font-size="9">y_v = W₀^v x + Σ ω̂_e B_e^v A_e^v x</text>
+      <text x="840" y="414" text-anchor="middle" fill="#94a3b8" font-size="7">trainable Δ on top of frozen W₀^v</text>
+
+      <!-- K projection (frozen, no LoRA) -->
+      <rect x="780" y="190" width="120" height="42" rx="8" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="1.2"/>
+      <text x="840" y="208" text-anchor="middle" fill="#cbd5e1" font-size="10" font-weight="600">K = W₀^k x</text>
+      <text x="840" y="222" text-anchor="middle" fill="#94a3b8" font-size="7">no LoRA · frozen (per Hu et al.)</text>
+
+      <!-- Attention block -->
+      <rect x="930" y="240" width="160" height="180" rx="10" fill="#0f172a"/>
+      <rect x="930" y="240" width="160" height="180" rx="10" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="1010" y="266" text-anchor="middle" fill="#d1fae5" font-size="11" font-weight="700">multi-head</text>
+      <text x="1010" y="282" text-anchor="middle" fill="#d1fae5" font-size="11" font-weight="700">attention</text>
+      <text x="1010" y="306" text-anchor="middle" fill="#cbd5e1" font-size="9">softmax(QK^T/√d_k) V</text>
+      <text x="1010" y="324" text-anchor="middle" fill="#94a3b8" font-size="8">12 heads · d_k = 64</text>
+      <rect x="950" y="338" width="120" height="20" rx="3" fill="rgba(30,41,59,0.7)" stroke="#94a3b8" stroke-width="0.7"/><text x="1010" y="352" text-anchor="middle" fill="#94a3b8" font-size="8">attn output W_o (frozen)</text>
+      <text x="1010" y="378" text-anchor="middle" fill="#94a3b8" font-size="8">+ residual + LN</text>
+      <text x="1010" y="396" text-anchor="middle" fill="#94a3b8" font-size="8">+ FFN (frozen)</text>
+      <text x="1010" y="412" text-anchor="middle" fill="#94a3b8" font-size="8">+ residual + LN</text>
+
+      <!-- Output -->
+      <rect x="1220" y="290" width="140" height="80" rx="8" fill="#0f172a"/>
+      <rect x="1220" y="290" width="140" height="80" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="1290" y="316" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">layer ℓ + 1</text>
+      <text x="1290" y="334" text-anchor="middle" fill="#67e8f9" font-size="10">x' ∈ R<tspan font-size="7" dy="-3">B × L × 768</tspan></text>
+      <text x="1290" y="352" text-anchor="middle" fill="#94a3b8" font-size="8">→ next layer (× 12 total)</text>
+
+      <!-- Router state injection annotation -->
+      <rect x="930" y="455" width="430" height="110" rx="8" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1.3" stroke-dasharray="5,4"/>
+      <text x="1145" y="478" text-anchor="middle" fill="#fda4af" font-size="10" font-weight="700">▸ ROUTING STATE INJECTION (per-batch)</text>
+      <text x="1145" y="498" text-anchor="middle" fill="#cbd5e1" font-size="9">layer._routing_weights = top_values</text>
+      <text x="1145" y="514" text-anchor="middle" fill="#cbd5e1" font-size="9">layer._routing_expert_indices = expert_ids</text>
+      <text x="1145" y="534" text-anchor="middle" fill="#94a3b8" font-size="8">try / finally clears state after forward</text>
+      <text x="1145" y="550" text-anchor="middle" fill="#94a3b8" font-size="8">⇒ same router decision shared by all 24 LoRA modules in this pass</text>
+
+      <!-- Master equation banner at bottom -->
+      <text x="40" y="668" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ FORWARD EQUATION (per LoRAMoELinear)</text>
+      <rect x="40" y="680" width="1320" height="120" rx="10" fill="rgba(15,23,42,0.75)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="700" y="712" text-anchor="middle" fill="#f1f5f9" font-size="16" font-weight="600">y(x) = W₀ x  +  (α / r) · Σ<tspan font-size="9" dy="3">e ∈ top-M(ω̂)</tspan><tspan dy="-3"> ω̂_e · B_e A_e x</tspan></text>
+      <text x="700" y="744" text-anchor="middle" fill="#cbd5e1" font-size="10">W₀ ∈ R<tspan font-size="7" dy="-3">768×768</tspan><tspan dy="3"> (frozen)</tspan>   ·   A_e ∈ R<tspan font-size="7" dy="-3">r × 768</tspan><tspan dy="3">, B_e ∈ R</tspan><tspan font-size="7" dy="-3">768 × r</tspan><tspan dy="3"> (trainable)</tspan>   ·   r = 4, α = 8 ⇒ α/r = 2.0</text>
+      <text x="700" y="768" text-anchor="middle" fill="#94a3b8" font-size="9">parameter budget per LoRAMoELinear: M × (r·d_in + d_out·r)  =  M × 6 144  ≈  12 K floats (M = 2)</text>
+      <text x="700" y="786" text-anchor="middle" fill="#fbbf24" font-size="9">init: A ~ Kaiming-uniform · B ≡ 0 ⇒ ΔW = 0 ⇒ at t = 0 the model is identical to frozen FinBERT</text>
+
+      <!-- Legend -->
+      <g font-size="9" font-family="JetBrains Mono">
+        <text x="40" y="838" fill="#94a3b8" font-weight="600" letter-spacing="0.1em">LEGEND</text>
+        <rect x="110" y="832" width="10" height="10" rx="2" fill="rgba(30,41,59,0.7)" stroke="#94a3b8"/><text x="128" y="841" fill="#cbd5e1">FROZEN backbone</text>
+        <rect x="280" y="832" width="10" height="10" rx="2" fill="rgba(76,29,149,0.45)" stroke="#a78bfa"/><text x="298" y="841" fill="#cbd5e1">trainable LoRA expert</text>
+        <rect x="460" y="832" width="10" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399"/><text x="478" y="841" fill="#cbd5e1">trainable attention output</text>
+        <rect x="660" y="832" width="10" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee"/><text x="678" y="841" fill="#cbd5e1">hidden states / data</text>
+        <rect x="840" y="832" width="10" height="10" rx="2" fill="rgba(136,19,55,0.4)" stroke="#fb7185"/><text x="858" y="841" fill="#cbd5e1">router injection (per batch)</text>
+        <line x1="1050" y1="837" x2="1080" y2="837" stroke="#a78bfa" stroke-width="1.4"/><text x="1088" y="841" fill="#cbd5e1">expert path</text>
+        <line x1="1180" y1="837" x2="1210" y2="837" stroke="#94a3b8" stroke-width="1.4"/><text x="1218" y="841" fill="#cbd5e1">frozen path</text>
+      </g>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_6 -->
+
+  <!-- ============================ DIAGRAM 7: END-TO-END DATA FLOW ============================ -->
+  <section class="section">
+    <h2><span class="num">7</span>End-to-End Data Flow · A Single Inference</h2>
+    <p class="desc">Trace one example from raw text to sentiment prediction. The router branches off the [CLS] embedding to compute top-M routing once; the same decision is injected into every LoRA-MoE module of the encoder via the <code>_routing_weights</code> attribute.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 740" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid7" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah7" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/></marker>
+        <marker id="ah7r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/></marker>
+        <marker id="ah7v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/></marker>
+        <marker id="ah7g" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/></marker>
+      </defs>
+      <rect width="1400" height="740" fill="url(#grid7)"/>
+
+      <!-- Main horizontal flow arrows (cyan) -->
+      <line x1="180" y1="220" x2="240" y2="220" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah7)"/>
+      <line x1="400" y1="220" x2="460" y2="220" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah7)"/>
+      <line x1="620" y1="220" x2="680" y2="220" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah7)"/>
+      <line x1="840" y1="220" x2="900" y2="220" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah7)"/>
+      <line x1="1060" y1="220" x2="1120" y2="220" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah7)"/>
+      <line x1="1280" y1="220" x2="1340" y2="220" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ah7)"/>
+
+      <!-- Router branch: from embeddings (stage 3) down to router box -->
+      <line x1="560" y1="280" x2="560" y2="370" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#ah7r)"/>
+      <!-- Router → injection arrow into encoder -->
+      <line x1="680" y1="430" x2="760" y2="430" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3"/>
+      <line x1="760" y1="430" x2="760" y2="280" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#ah7r)"/>
+
+      <!-- Final → bottom output (sentiment) -->
+      <line x1="1400" y1="220" x2="1400" y2="220" stroke="#22d3ee" stroke-width="1.4"/>
+
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">END-TO-END FORWARD PASS · text → sentiment logits</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">FedLEASEFinBERT.forward()  ·  models/finbert_lora_moe.py</text>
+
+      <!-- Example text -->
+      <rect x="40" y="86" width="1320" height="48" rx="8" fill="rgba(15,23,42,0.7)" stroke="#475569" stroke-width="1"/>
+      <text x="60" y="110" fill="#94a3b8" font-size="9">▸ example input (client C5, Twitter cluster):</text>
+      <text x="260" y="112" fill="#67e8f9" font-size="12" font-weight="600">"$TSLA earnings beat consensus but margins tightening 📉 — mixed signal fr"</text>
+      <text x="60" y="126" fill="#94a3b8" font-size="8">label: 1 (neutral)  ·  cluster c(C5) = 1  ·  assigned_expert_idx = 1</text>
+
+      <!-- Stage 1: Text -->
+      <rect x="40" y="180" width="140" height="80" rx="8" fill="#0f172a"/>
+      <rect x="40" y="180" width="140" height="80" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="110" y="200" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">①  raw text</text>
+      <text x="110" y="218" text-anchor="middle" fill="#67e8f9" font-size="9">str</text>
+      <text x="110" y="238" text-anchor="middle" fill="#94a3b8" font-size="7">UTF-8</text>
+      <text x="110" y="252" text-anchor="middle" fill="#94a3b8" font-size="7">len ≈ 68 chars</text>
+
+      <!-- Stage 2: Tokenizer -->
+      <rect x="240" y="180" width="160" height="80" rx="8" fill="#0f172a"/>
+      <rect x="240" y="180" width="160" height="80" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="320" y="200" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">②  tokeniser</text>
+      <text x="320" y="218" text-anchor="middle" fill="#94a3b8" font-size="8">FinBERT WordPiece</text>
+      <text x="320" y="236" text-anchor="middle" fill="#67e8f9" font-size="9">input_ids ∈ Z<tspan font-size="6" dy="-3">128</tspan></text>
+      <text x="320" y="252" text-anchor="middle" fill="#94a3b8" font-size="7">[CLS] $tsla earnings ... [SEP] [PAD]…</text>
+
+      <!-- Stage 3: Embeddings -->
+      <rect x="460" y="180" width="160" height="80" rx="8" fill="#0f172a"/>
+      <rect x="460" y="180" width="160" height="80" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="540" y="200" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">③  embeddings (frozen)</text>
+      <text x="540" y="218" text-anchor="middle" fill="#94a3b8" font-size="8">tok + pos + seg</text>
+      <text x="540" y="236" text-anchor="middle" fill="#6ee7b7" font-size="9">emb ∈ R<tspan font-size="6" dy="-3">128 × 768</tspan></text>
+      <text x="540" y="252" text-anchor="middle" fill="#94a3b8" font-size="7">cls_emb = emb[0, :]</text>
+
+      <!-- Stage 4: BERT encoder with LoRA-MoE -->
+      <rect x="680" y="180" width="160" height="80" rx="8" fill="#0f172a"/>
+      <rect x="680" y="180" width="160" height="80" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="760" y="200" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">④  encoder × 12</text>
+      <text x="760" y="218" text-anchor="middle" fill="#94a3b8" font-size="8">BERT layers w/ LoRA-MoE</text>
+      <text x="760" y="236" text-anchor="middle" fill="#6ee7b7" font-size="9">h ∈ R<tspan font-size="6" dy="-3">128 × 768</tspan></text>
+      <text x="760" y="252" text-anchor="middle" fill="#a78bfa" font-size="7">routing injected per batch</text>
+
+      <!-- Stage 5: Pooler -->
+      <rect x="900" y="180" width="160" height="80" rx="8" fill="#0f172a"/>
+      <rect x="900" y="180" width="160" height="80" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="980" y="200" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">⑤  pooler</text>
+      <text x="980" y="218" text-anchor="middle" fill="#94a3b8" font-size="8">tanh(W·CLS + b)</text>
+      <text x="980" y="236" text-anchor="middle" fill="#6ee7b7" font-size="9">pooled ∈ R<tspan font-size="6" dy="-3">768</tspan></text>
+      <text x="980" y="252" text-anchor="middle" fill="#94a3b8" font-size="7">+ dropout 0.1</text>
+
+      <!-- Stage 6: Classifier -->
+      <rect x="1120" y="180" width="160" height="80" rx="8" fill="#0f172a"/>
+      <rect x="1120" y="180" width="160" height="80" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="1200" y="200" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">⑥  classifier head</text>
+      <text x="1200" y="218" text-anchor="middle" fill="#94a3b8" font-size="8">W_cls ∈ R<tspan font-size="6" dy="-3">3 × 768</tspan></text>
+      <text x="1200" y="236" text-anchor="middle" fill="#6ee7b7" font-size="9">logits ∈ R<tspan font-size="6" dy="-3">3</tspan></text>
+      <text x="1200" y="252" text-anchor="middle" fill="#94a3b8" font-size="7">[neg, neu, pos]</text>
+
+      <!-- Stage 7: Softmax + prediction -->
+      <rect x="1340" y="180" width="40" height="80" rx="6" fill="rgba(15,23,42,0.6)" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="1360" y="218" text-anchor="middle" fill="#cbd5e1" font-size="9">⑦</text>
+      <text x="1360" y="234" text-anchor="middle" fill="#cbd5e1" font-size="9">soft</text>
+      <text x="1360" y="246" text-anchor="middle" fill="#cbd5e1" font-size="9">max</text>
+
+      <!-- Router branch (below main flow) -->
+      <text x="40" y="316" fill="#fb7185" font-size="10" font-weight="600" letter-spacing="0.1em">▸ ROUTING BRANCH (parallel · runs once on [CLS])</text>
+
+      <rect x="460" y="370" width="220" height="120" rx="8" fill="#0f172a"/>
+      <rect x="460" y="370" width="220" height="120" rx="8" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="570" y="394" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">AdaptiveTopMRouter</text>
+      <text x="570" y="412" text-anchor="middle" fill="#cbd5e1" font-size="9">cls_emb · G_5 (2M−1 × d)</text>
+      <text x="570" y="430" text-anchor="middle" fill="#94a3b8" font-size="8">softmax → ω̂ ∈ Δ<tspan font-size="7" dy="-3">2M−1</tspan></text>
+      <text x="570" y="450" text-anchor="middle" fill="#fbbf24" font-size="9">top_values, expert_indices</text>
+      <text x="570" y="468" text-anchor="middle" fill="#94a3b8" font-size="8">e.g. [0.20, 0.62, 0.10] · [0, 1, 2]</text>
+      <text x="570" y="484" text-anchor="middle" fill="#34d399" font-size="8">assigned E_1 always present</text>
+
+      <!-- Injection box -->
+      <rect x="700" y="370" width="280" height="120" rx="8" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1.3" stroke-dasharray="5,4"/>
+      <text x="840" y="394" text-anchor="middle" fill="#fda4af" font-size="10" font-weight="700">routing state injection</text>
+      <text x="840" y="416" text-anchor="middle" fill="#cbd5e1" font-size="9">for layer ∈ self.lora_layers (24):</text>
+      <text x="840" y="432" text-anchor="middle" fill="#cbd5e1" font-size="9">  layer._routing_weights = ω̂_top</text>
+      <text x="840" y="448" text-anchor="middle" fill="#cbd5e1" font-size="9">  layer._routing_expert_indices = ids</text>
+      <text x="840" y="470" text-anchor="middle" fill="#94a3b8" font-size="8">applied to all 12 layers × 2 modules</text>
+      <text x="840" y="485" text-anchor="middle" fill="#fbbf24" font-size="8">cleared in finally{} after forward</text>
+
+      <!-- inputs_embeds trick annotation -->
+      <rect x="40" y="370" width="380" height="120" rx="8" fill="rgba(8,51,68,0.18)" stroke="#22d3ee" stroke-width="1.2" stroke-dasharray="5,4"/>
+      <text x="230" y="394" text-anchor="middle" fill="#67e8f9" font-size="10" font-weight="700">inputs_embeds trick</text>
+      <text x="230" y="416" text-anchor="middle" fill="#cbd5e1" font-size="9">embeddings sublayer is called manually</text>
+      <text x="230" y="432" text-anchor="middle" fill="#cbd5e1" font-size="9">so cls_emb is available BEFORE encoder</text>
+      <text x="230" y="450" text-anchor="middle" fill="#cbd5e1" font-size="9">encoder then runs with input_ids=None,</text>
+      <text x="230" y="466" text-anchor="middle" fill="#cbd5e1" font-size="9">inputs_embeds=emb (no re-embedding)</text>
+      <text x="230" y="486" text-anchor="middle" fill="#94a3b8" font-size="8">⇒ router cost is amortised, not duplicated</text>
+
+      <!-- Encoder zoom box (showing what one layer looks like internally) -->
+      <text x="40" y="544" fill="#34d399" font-size="10" font-weight="600" letter-spacing="0.1em">▸ INSIDE THE ENCODER  ·  every transformer layer routes the SAME (ω̂, ids) into its q-LoRAMoELinear and v-LoRAMoELinear</text>
+
+      <g>
+        <rect x="40" y="568" width="220" height="100" rx="8" fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="150" y="588" text-anchor="middle" fill="#d1fae5" font-size="10" font-weight="600">layer ℓ = 1</text>
+        <text x="150" y="608" text-anchor="middle" fill="#94a3b8" font-size="8">attn(q, k, v) → FFN → LN</text>
+        <rect x="55" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="100" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">q : E_1 · E_0</text>
+        <rect x="155" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="200" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">v : E_1 · E_0</text>
+        <text x="150" y="654" text-anchor="middle" fill="#fbbf24" font-size="7">ω̂ = [0.62, 0.20, …]</text>
+      </g>
+      <g>
+        <rect x="280" y="568" width="220" height="100" rx="8" fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="390" y="588" text-anchor="middle" fill="#d1fae5" font-size="10" font-weight="600">layer ℓ = 2</text>
+        <rect x="295" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="340" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">q : E_1 · E_0</text>
+        <rect x="395" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="440" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">v : E_1 · E_0</text>
+        <text x="390" y="654" text-anchor="middle" fill="#94a3b8" font-size="7">same routing state</text>
+      </g>
+      <text x="540" y="623" text-anchor="middle" fill="#94a3b8" font-size="14">…</text>
+      <g>
+        <rect x="560" y="568" width="220" height="100" rx="8" fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="670" y="588" text-anchor="middle" fill="#d1fae5" font-size="10" font-weight="600">layer ℓ = 11</text>
+        <rect x="575" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="620" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">q : E_1 · E_0</text>
+        <rect x="675" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="720" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">v : E_1 · E_0</text>
+      </g>
+      <g>
+        <rect x="800" y="568" width="220" height="100" rx="8" fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="910" y="588" text-anchor="middle" fill="#d1fae5" font-size="10" font-weight="600">layer ℓ = 12</text>
+        <rect x="815" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="860" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">q : E_1 · E_0</text>
+        <rect x="915" y="618" width="90" height="18" rx="3" fill="rgba(76,29,149,0.45)" stroke="#a78bfa" stroke-width="0.7"/><text x="960" y="631" text-anchor="middle" fill="#ddd6fe" font-size="7">v : E_1 · E_0</text>
+      </g>
+
+      <!-- prediction box at far right -->
+      <rect x="1060" y="568" width="300" height="100" rx="8" fill="#0f172a"/>
+      <rect x="1060" y="568" width="300" height="100" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="1210" y="592" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="700">⑦ prediction</text>
+      <text x="1210" y="612" text-anchor="middle" fill="#cbd5e1" font-size="9">softmax(logits) → [0.12, 0.71, 0.17]</text>
+      <text x="1210" y="630" text-anchor="middle" fill="#94a3b8" font-size="8">argmax = 1</text>
+      <text x="1210" y="654" text-anchor="middle" fill="#34d399" font-size="11" font-weight="700">→ "neutral"  ✓</text>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_7 -->
+
+  <!-- ============================ DIAGRAM 8: COMMUNICATION + AGGREGATION FLOW ============================ -->
+  <section class="section">
+    <h2><span class="num">8</span>Communication Payload &amp; Cluster-Wise Aggregation</h2>
+    <p class="desc">The communication-aggregation closeup. Each client uploads only its assigned-expert LoRA pair, its router gate, and its dataset size. The server bins uploads by cluster, performs <em>weighted averaging within each cluster</em>, FedAvg's the classifier head globally, and broadcasts the updated expert bank back. No cross-cluster averaging ⇒ negative-transfer term vanishes.</p>
+    <div class="diagram-card">
+    <svg viewBox="0 0 1400 900" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="grid8" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+        <marker id="ah8" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24"/></marker>
+        <marker id="ah8r" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/></marker>
+        <marker id="ah8v" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/></marker>
+      </defs>
+      <rect width="1400" height="900" fill="url(#grid8)"/>
+
+      <!-- aggregation flow arrows -->
+      <!-- cluster 0 uploads → aggregator -->
+      <line x1="280" y1="430" x2="540" y2="430" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#ah8r)"/>
+      <line x1="280" y1="630" x2="540" y2="630" stroke="#fb7185" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#ah8r)"/>
+      <!-- aggregator → new expert bank -->
+      <line x1="860" y1="430" x2="980" y2="430" stroke="#a78bfa" stroke-width="1.4" marker-end="url(#ah8v)"/>
+      <line x1="860" y1="630" x2="980" y2="630" stroke="#a78bfa" stroke-width="1.4" marker-end="url(#ah8v)"/>
+      <!-- broadcast loop -->
+      <line x1="1340" y1="530" x2="1340" y2="780" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="5,4"/>
+      <line x1="1340" y1="780" x2="80" y2="780" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="5,4"/>
+      <line x1="80" y1="780" x2="80" y2="540" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#ah8)"/>
+
+      <text x="700" y="40" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700" letter-spacing="0.05em">COMMUNICATION PAYLOAD &amp; CLUSTER-WISE AGGREGATION</text>
+      <text x="700" y="56" text-anchor="middle" fill="#64748b" font-size="9">federated/aggregation.py · cluster_wise_aggregation()  ·  runs every round on the server</text>
+
+      <!-- Per-client payload anatomy -->
+      <text x="40" y="92" fill="#fb7185" font-size="10" font-weight="600" letter-spacing="0.1em">▸ PER-CLIENT UPLOAD PAYLOAD (uplink) · ~600 KB / round at fp32</text>
+      <rect x="40" y="106" width="1320" height="42" rx="6" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,4"/>
+      <g font-family="JetBrains Mono" font-size="9">
+        <rect x="60" y="116" width="200" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/><text x="160" y="131" text-anchor="middle" fill="#ddd6fe">A_{c(i)} ∈ R^{12·2·4·768}</text>
+        <rect x="280" y="116" width="200" height="22" rx="3" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/><text x="380" y="131" text-anchor="middle" fill="#ddd6fe">B_{c(i)} ∈ R^{12·2·768·4}</text>
+        <rect x="500" y="116" width="200" height="22" rx="3" fill="rgba(136,19,55,0.45)" stroke="#fb7185" stroke-width="0.8"/><text x="600" y="131" text-anchor="middle" fill="#fda4af">router gate G_i ∈ R^{(2M-1)·d}</text>
+        <rect x="720" y="116" width="200" height="22" rx="3" fill="rgba(6,78,59,0.45)" stroke="#34d399" stroke-width="0.8"/><text x="820" y="131" text-anchor="middle" fill="#6ee7b7">θ_head,i ∈ R^{3·768}</text>
+        <rect x="940" y="116" width="120" height="22" rx="3" fill="rgba(8,51,68,0.5)" stroke="#22d3ee" stroke-width="0.8"/><text x="1000" y="131" text-anchor="middle" fill="#67e8f9">n_i (size)</text>
+        <text x="1090" y="131" fill="#94a3b8">• 73K + 73K + ~1.5K + ~2.3K floats</text>
+        <text x="1320" y="131" text-anchor="end" fill="#fbbf24">total ≈ 600 KB</text>
+      </g>
+
+      <!-- ============================ LEFT: client uploads grouped by cluster ============================ -->
+      <text x="40" y="178" fill="#34d399" font-size="10" font-weight="600" letter-spacing="0.1em">▸ INBOUND · 10 PAYLOADS BINNED BY CLUSTER</text>
+
+      <!-- Cluster 0 box -->
+      <rect x="40" y="200" width="260" height="300" rx="10" fill="rgba(8,51,68,0.18)" stroke="#22d3ee" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="170" y="224" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">cluster 0 · PhraseBank</text>
+      <text x="170" y="240" text-anchor="middle" fill="#94a3b8" font-size="8">Σ n_i = n_0 = 1 585</text>
+
+      <g font-family="JetBrains Mono" font-size="8">
+        <g><rect x="58" y="252" width="224" height="42" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="266" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_0  (from C0)</text>
+          <text x="170" y="282" text-anchor="middle" fill="#94a3b8">(A_0, B_0)_0   ·  G_0  ·  n_0 = 317</text></g>
+        <g><rect x="58" y="298" width="224" height="42" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="312" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_1  (from C1)</text>
+          <text x="170" y="328" text-anchor="middle" fill="#94a3b8">(A_0, B_0)_1   ·  G_1  ·  n_1 = 317</text></g>
+        <g><rect x="58" y="344" width="224" height="42" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="358" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_2  (from C2)</text>
+          <text x="170" y="374" text-anchor="middle" fill="#94a3b8">(A_0, B_0)_2   ·  G_2  ·  n_2 = 317</text></g>
+        <g><rect x="58" y="390" width="224" height="42" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="404" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_3  (from C3)</text>
+          <text x="170" y="420" text-anchor="middle" fill="#94a3b8">(A_0, B_0)_3   ·  G_3  ·  n_3 = 317</text></g>
+        <g><rect x="58" y="436" width="224" height="42" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="450" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_4  (from C4)</text>
+          <text x="170" y="466" text-anchor="middle" fill="#94a3b8">(A_0, B_0)_4   ·  G_4  ·  n_4 = 317</text></g>
+      </g>
+
+      <!-- Cluster 1 box -->
+      <rect x="40" y="520" width="260" height="240" rx="10" fill="rgba(136,19,55,0.15)" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="170" y="544" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">cluster 1 · Twitter</text>
+      <text x="170" y="560" text-anchor="middle" fill="#94a3b8" font-size="8">Σ n_i = n_1 = 8 351</text>
+
+      <g font-family="JetBrains Mono" font-size="8">
+        <g><rect x="58" y="572" width="224" height="34" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="586" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_5  (C5)</text>
+          <text x="170" y="600" text-anchor="middle" fill="#94a3b8">(A_1, B_1)_5  ·  G_5  ·  n_5 = 1670</text></g>
+        <g><rect x="58" y="610" width="224" height="34" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="624" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_6  (C6)</text>
+          <text x="170" y="638" text-anchor="middle" fill="#94a3b8">(A_1, B_1)_6  ·  G_6  ·  n_6 = 1670</text></g>
+        <g><rect x="58" y="648" width="224" height="34" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="662" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_7  (C7)</text>
+          <text x="170" y="676" text-anchor="middle" fill="#94a3b8">(A_1, B_1)_7  ·  G_7  ·  n_7 = 1670</text></g>
+        <g><rect x="58" y="686" width="224" height="34" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="700" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_8  (C8)</text>
+          <text x="170" y="714" text-anchor="middle" fill="#94a3b8">(A_1, B_1)_8  ·  G_8  ·  n_8 = 1670</text></g>
+        <g><rect x="58" y="724" width="224" height="34" rx="4" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.8"/>
+          <text x="170" y="738" text-anchor="middle" fill="#ddd6fe" font-weight="600">payload_9  (C9)</text>
+          <text x="170" y="752" text-anchor="middle" fill="#94a3b8">(A_1, B_1)_9  ·  G_9  ·  n_9 = 1671</text></g>
+      </g>
+
+      <!-- ============================ MIDDLE: Aggregator engines ============================ -->
+      <text x="540" y="178" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">▸ FEDERATED AGGREGATOR · cluster-wise weighted FedAvg</text>
+
+      <!-- Cluster 0 aggregator -->
+      <rect x="540" y="350" width="320" height="160" rx="10" fill="#0f172a"/>
+      <rect x="540" y="350" width="320" height="160" rx="10" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="700" y="372" text-anchor="middle" fill="#fef3c7" font-size="11" font-weight="700">aggregator · cluster 0</text>
+      <text x="700" y="392" text-anchor="middle" fill="#cbd5e1" font-size="9">A_0^{t+1} = Σ_{i ∈ C_0} (n_i / n_0) · A_0^{(i)}</text>
+      <text x="700" y="410" text-anchor="middle" fill="#cbd5e1" font-size="9">B_0^{t+1} = Σ_{i ∈ C_0} (n_i / n_0) · B_0^{(i)}</text>
+      <line x1="560" y1="424" x2="840" y2="424" stroke="#475569" stroke-width="0.6"/>
+      <text x="700" y="442" text-anchor="middle" fill="#94a3b8" font-size="8">weights · all equal 317/1585 = 0.20</text>
+      <text x="700" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">⇒ A_0 ← uniform average of 5 PhraseBank clients</text>
+      <text x="700" y="478" text-anchor="middle" fill="#34d399" font-size="9">no cross-cluster averaging</text>
+      <text x="700" y="494" text-anchor="middle" fill="#fbbf24" font-size="8">↪ negative-transfer term = 0</text>
+
+      <!-- Cluster 1 aggregator -->
+      <rect x="540" y="550" width="320" height="160" rx="10" fill="#0f172a"/>
+      <rect x="540" y="550" width="320" height="160" rx="10" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="700" y="572" text-anchor="middle" fill="#fef3c7" font-size="11" font-weight="700">aggregator · cluster 1</text>
+      <text x="700" y="592" text-anchor="middle" fill="#cbd5e1" font-size="9">A_1^{t+1} = Σ_{i ∈ C_1} (n_i / n_1) · A_1^{(i)}</text>
+      <text x="700" y="610" text-anchor="middle" fill="#cbd5e1" font-size="9">B_1^{t+1} = Σ_{i ∈ C_1} (n_i / n_1) · B_1^{(i)}</text>
+      <line x1="560" y1="624" x2="840" y2="624" stroke="#475569" stroke-width="0.6"/>
+      <text x="700" y="642" text-anchor="middle" fill="#94a3b8" font-size="8">weights · ≈ 1670 / 8351 = 0.20</text>
+      <text x="700" y="658" text-anchor="middle" fill="#94a3b8" font-size="8">⇒ A_1 ← uniform average of 5 Twitter clients</text>
+      <text x="700" y="678" text-anchor="middle" fill="#34d399" font-size="9">isolated from cluster 0 update</text>
+      <text x="700" y="694" text-anchor="middle" fill="#fbbf24" font-size="8">↪ within-cluster variance only</text>
+
+      <!-- Classifier head: GLOBAL FedAvg -->
+      <rect x="540" y="240" width="320" height="80" rx="10" fill="rgba(6,78,59,0.3)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="700" y="262" text-anchor="middle" fill="#d1fae5" font-size="11" font-weight="700">classifier head · GLOBAL FedAvg</text>
+      <text x="700" y="282" text-anchor="middle" fill="#cbd5e1" font-size="9">θ_head^{t+1} = Σ_i (n_i / n) · θ_head,i</text>
+      <text x="700" y="300" text-anchor="middle" fill="#94a3b8" font-size="8">labels are register-invariant ⇒ a single head suffices</text>
+      <text x="700" y="314" text-anchor="middle" fill="#6ee7b7" font-size="8">weighted by total n = n_0 + n_1 = 9 936</text>
+
+      <!-- Routers: not aggregated -->
+      <rect x="540" y="740" width="320" height="50" rx="8" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="700" y="760" text-anchor="middle" fill="#fda4af" font-size="10" font-weight="600">router gates G_i  ·  not aggregated</text>
+      <text x="700" y="776" text-anchor="middle" fill="#94a3b8" font-size="8">per-client personalisation · returned to owner only</text>
+
+      <!-- ============================ RIGHT: New expert bank → broadcast ============================ -->
+      <text x="980" y="178" fill="#a78bfa" font-size="10" font-weight="600" letter-spacing="0.1em">▸ UPDATED EXPERT BANK (server state at round t + 1)</text>
+
+      <rect x="980" y="350" width="360" height="160" rx="10" fill="#0f172a"/>
+      <rect x="980" y="350" width="360" height="160" rx="10" fill="rgba(8,51,68,0.3)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="1160" y="374" text-anchor="middle" fill="#67e8f9" font-size="11" font-weight="700">Expert E_0  (cluster 0)</text>
+      <rect x="1000" y="386" width="160" height="46" rx="4" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1080" y="402" text-anchor="middle" fill="#ddd6fe" font-size="9">A_0^{t+1}</text>
+      <text x="1080" y="418" text-anchor="middle" fill="#94a3b8" font-size="7">4×768  ·  per layer</text>
+      <rect x="1170" y="386" width="160" height="46" rx="4" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1250" y="402" text-anchor="middle" fill="#ddd6fe" font-size="9">B_0^{t+1}</text>
+      <text x="1250" y="418" text-anchor="middle" fill="#94a3b8" font-size="7">768×4  ·  per layer</text>
+      <text x="1160" y="450" text-anchor="middle" fill="#cbd5e1" font-size="9">ready for broadcast at round t + 1</text>
+      <text x="1160" y="468" text-anchor="middle" fill="#94a3b8" font-size="8">specialisation: analyst-prose register</text>
+      <text x="1160" y="490" text-anchor="middle" fill="#34d399" font-size="9">▸ improved on PhraseBank, untouched by Twitter gradients</text>
+
+      <rect x="980" y="550" width="360" height="160" rx="10" fill="#0f172a"/>
+      <rect x="980" y="550" width="360" height="160" rx="10" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1.5"/>
+      <text x="1160" y="574" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">Expert E_1  (cluster 1)</text>
+      <rect x="1000" y="586" width="160" height="46" rx="4" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1080" y="602" text-anchor="middle" fill="#ddd6fe" font-size="9">A_1^{t+1}</text>
+      <text x="1080" y="618" text-anchor="middle" fill="#94a3b8" font-size="7">4×768  ·  per layer</text>
+      <rect x="1170" y="586" width="160" height="46" rx="4" fill="rgba(76,29,149,0.5)" stroke="#a78bfa" stroke-width="0.8"/>
+      <text x="1250" y="602" text-anchor="middle" fill="#ddd6fe" font-size="9">B_1^{t+1}</text>
+      <text x="1250" y="618" text-anchor="middle" fill="#94a3b8" font-size="7">768×4  ·  per layer</text>
+      <text x="1160" y="650" text-anchor="middle" fill="#cbd5e1" font-size="9">ready for broadcast at round t + 1</text>
+      <text x="1160" y="668" text-anchor="middle" fill="#94a3b8" font-size="8">specialisation: tweet register</text>
+      <text x="1160" y="690" text-anchor="middle" fill="#fb7185" font-size="9">▸ improved on Twitter, untouched by PhraseBank gradients</text>
+
+      <!-- Broadcast tag -->
+      <rect x="980" y="240" width="360" height="80" rx="10" fill="rgba(120,53,15,0.15)" stroke="#fbbf24" stroke-width="1.3" stroke-dasharray="6,4"/>
+      <text x="1160" y="262" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="700">▼ BROADCAST · round t + 1 · downlink</text>
+      <text x="1160" y="280" text-anchor="middle" fill="#cbd5e1" font-size="9">send {(A_c^{t+1}, B_c^{t+1})}_{c ∈ [M]} + θ_head^{t+1}</text>
+      <text x="1160" y="296" text-anchor="middle" fill="#94a3b8" font-size="8">to ALL N = 10 clients (every cluster gets every expert)</text>
+      <text x="1160" y="312" text-anchor="middle" fill="#94a3b8" font-size="8">payload identical for every client · ≈ 600 KB</text>
+
+      <!-- Bottom annotation: variance decomposition -->
+      <text x="40" y="820" fill="#fbbf24" font-size="10" font-weight="600" letter-spacing="0.1em">▸ WHY THIS WORKS — variance decomposition of FedAvg under non-IID</text>
+      <rect x="40" y="838" width="1320" height="50" rx="8" fill="rgba(15,23,42,0.7)" stroke="#475569" stroke-width="1"/>
+      <text x="700" y="861" text-anchor="middle" fill="#cbd5e1" font-size="11">Var[FedAvg] = Var[FedAvg<tspan font-size="8" dy="-3">within</tspan><tspan dy="3">] + Var[FedAvg</tspan><tspan font-size="8" dy="-3">across</tspan><tspan dy="3">]   →   cluster-wise aggregation zeroes the "across" term by construction.</tspan></text>
+      <text x="700" y="879" text-anchor="middle" fill="#94a3b8" font-size="9">⇒ aggregation noise scales only with within-cluster gradient dissimilarity Γ²_within — which is small by silhouette construction.</text>
+    </svg>
+    </div>
+  </section>
+  <!-- END_DIAGRAM_8 -->
+
+  <!-- ============================ SUMMARY CARDS ============================ -->
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-header"><div class="card-dot cyan"></div><h3>Data &amp; Federation</h3></div>
+      <ul>
+        <li>• N = 10 clients · heterogeneous partition</li>
+        <li>• 5 × PhraseBank shards (formal prose)</li>
+        <li>• 5 × Twitter shards (retail tweets)</li>
+        <li>• Unified labels {neg=0, neu=1, pos=2}</li>
+        <li>• Total federation traffic ≈ 150 MB / run</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-dot violet"></div><h3>LoRA · Routing · MoE</h3></div>
+      <ul>
+        <li>• FinBERT frozen (110 M params)</li>
+        <li>• LoRA rank r = 4, α = 8 on q, v projections</li>
+        <li>• Adaptive top-M router · 2M − 1 output</li>
+        <li>• Assigned-expert guarantee (proven)</li>
+        <li>• ≈ 0.27% of model trainable</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-dot amber"></div><h3>Server &amp; Aggregation</h3></div>
+      <ul>
+        <li>• B-matrix cosine similarity (Eq. 2)</li>
+        <li>• Agglomerative · average linkage</li>
+        <li>• M* = argmax silhouette · k ∈ [2, 8]</li>
+        <li>• Expert init = intra-cluster mean (Eq. 3)</li>
+        <li>• Cluster-wise weighted FedAvg per round</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    <div>FedLEASE-FinBERT · system architecture · 8 diagrams · self-contained SVG</div>
+    <div>docs/architecture.html · generated 2026-05-16</div>
+  </footer>
+</div>
+
+<script>
+function getCaptureRect() {
+  const el = document.getElementById('report-container');
+  const r = el.getBoundingClientRect();
+  const pad = 32;
+  return { x: r.left - pad, y: r.top - pad, w: r.width + 2 * pad, h: r.height + 2 * pad };
+}
+async function capture(scale) {
+  const r = getCaptureRect();
+  const toolbar = document.getElementById('toolbar');
+  return await html2canvas(document.body, {
+    x: r.x, y: r.y, width: r.w, height: r.h,
+    backgroundColor: '#020617',
+    scale: scale || 2,
+    ignoreElements: (el) => el === toolbar
+  });
+}
+async function copyAsImage() {
+  try {
+    const c = await capture(2);
+    c.toBlob(async (blob) => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        document.querySelector('.toolbar-toggle').textContent = '✓';
+        setTimeout(() => { document.querySelector('.toolbar-toggle').textContent = '⋯'; }, 1500);
+      } catch (e) { console.error(e); alert('Clipboard requires HTTPS/localhost.'); }
+    }, 'image/png');
+  } catch (e) { console.error(e); }
+}
+async function downloadPNG() {
+  const c = await capture(2);
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = 'fedlease-finbert-architecture.png';
+  a.click();
+}
+async function downloadPDF() {
+  const c = await capture(2);
+  const { jsPDF } = window.jspdf;
+  const w = c.width, h = c.height;
+  const pdf = new jsPDF({ orientation: w > h ? 'landscape' : 'portrait', unit: 'px', format: [w, h] });
+  pdf.addImage(c.toDataURL('image/png'), 'PNG', 0, 0, w, h);
+  pdf.save('fedlease-finbert-architecture.pdf');
+}
+</script>
+</body>
+</html>

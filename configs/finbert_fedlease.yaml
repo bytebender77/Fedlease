@@ -1,0 +1,64 @@
+# FedLEASE + FinBERT production configuration
+# Paper: "Adaptive LoRA Experts Allocation and Selection for Federated Fine-Tuning"
+
+model:
+  name: "ProsusAI/finbert"
+  num_labels: 3
+  max_length: 128
+
+lora:
+  rank: 4
+  alpha: 8
+  dropout: 0.1
+  target_modules:
+    - "query"
+    - "value"
+
+federated:
+  num_clients: 10
+  num_rounds: 25
+  local_epochs: 2
+  batch_size: 32
+  warmup_epochs: 3
+  # M_max: upper bound on number of experts
+  max_experts: 8
+  min_experts: 2
+
+training:
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0
+  mixed_precision: true
+  seed: 42
+
+clustering:
+  min_clusters: 2
+  max_clusters: 8
+  linkage: "average"
+
+data:
+  dataset_phrasebank: "financial_phrasebank"
+  dataset_phrasebank_config: "sentences_allagree"
+  dataset_twitter: "zeroshot/twitter-financial-news-sentiment"
+  val_ratio: 0.10
+  test_ratio: 0.20
+  # heterogeneous: 5 clients PhraseBank, 5 clients Twitter
+  partition_strategy: "heterogeneous"
+  num_phrasebank_clients: 5
+  num_twitter_clients: 5
+  # for non_iid Dirichlet partitioning
+  dirichlet_alpha: 0.5
+
+paths:
+  output_dir: "outputs"
+  checkpoint_dir: "outputs/checkpoints"
+  log_dir: "outputs/logs"
+  plot_dir: "outputs/plots"
+  result_dir: "outputs/results"
+
+logging:
+  level: "INFO"
+  use_wandb: false
+  project_name: "fedlease-finbert"
+  experiment_name: "fedlease_financial_sentiment"
