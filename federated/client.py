@@ -125,6 +125,7 @@ class FederatedClient:
         expert_states: List[Dict],
         router_state: Optional[Dict],
         assigned_expert_idx: int,
+        head_states: Optional[List[Dict]] = None,
     ) -> None:
         """
         Initialise (or update) the FedLEASEFinBERT model with server-sent parameters.
@@ -159,7 +160,15 @@ class FederatedClient:
                 k: v.to(self.device) for k, v in router_state.items()
             })
 
-        # Ensure only assigned expert + router are trainable
+        # Load all M per-cluster head states from server (if provided)
+        if head_states:
+            moved = [
+                {k: v.to(self.device) for k, v in st.items()} if st else {}
+                for st in head_states
+            ]
+            self.fedlease_model.set_all_head_states(moved)
+
+        # Ensure only assigned expert + router + assigned head are trainable
         self.fedlease_model.set_trainable_expert(assigned_expert_idx)
 
     def local_train(self, n_epochs: int) -> Dict:
@@ -179,10 +188,11 @@ class FederatedClient:
         self.train_history.append(stats)
         return stats
 
-    def get_upload_payload(self) -> Tuple[int, Dict, Dict]:
+    def get_upload_payload(self) -> Tuple[int, Dict, Dict, Dict]:
         """
-        Return (client_id, expert_state, router_state) for upload to server.
-        Only the assigned expert is uploaded.
+        Return (client_id, expert_state, router_state, head_state) for upload.
+        Only the assigned expert AND its corresponding cluster head are uploaded.
+        head_state is an empty dict when per-cluster heads are disabled.
         """
         expert_state = {
             k: v.cpu()
@@ -192,7 +202,11 @@ class FederatedClient:
             k: v.cpu()
             for k, v in self.fedlease_model.get_router_state().items()
         }
-        return self.client_id, expert_state, router_state
+        head_state = {
+            k: v.cpu()
+            for k, v in self.fedlease_model.get_head_state(self.assigned_expert_idx).items()
+        }
+        return self.client_id, expert_state, router_state, head_state
 
     # ------------------------------------------------------------------
     # Internal training loop

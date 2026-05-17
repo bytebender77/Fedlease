@@ -179,6 +179,7 @@ class FedLEASEFinBERT(nn.Module):
         lora_dropout: float = 0.1,
         num_labels: int = 3,
         assigned_expert_idx: int = 0,
+        use_per_cluster_heads: bool = True,
     ) -> None:
         super().__init__()
 
@@ -186,6 +187,7 @@ class FedLEASEFinBERT(nn.Module):
         self.lora_rank = lora_rank
         self.assigned_expert_idx = assigned_expert_idx
         self.num_labels = num_labels
+        self.use_per_cluster_heads = use_per_cluster_heads
 
         config = AutoConfig.from_pretrained(model_name, num_labels=num_labels)
         self.bert = BertForSequenceClassification.from_pretrained(model_name, config=config)
@@ -198,6 +200,26 @@ class FedLEASEFinBERT(nn.Module):
 
         hidden_size = config.hidden_size
         self.router = AdaptiveTopMRouter(hidden_size, n_experts, assigned_expert_idx)
+
+        # Per-cluster classifier heads.
+        # Each head is initialised from the pretrained FinBERT classifier so
+        # all heads start identical. Only the assigned cluster's head trains
+        # locally; the server aggregates heads cluster-wise (same as experts).
+        if self.use_per_cluster_heads:
+            self.heads = nn.ModuleList([
+                nn.Linear(hidden_size, num_labels)
+                for _ in range(n_experts)
+            ])
+            with torch.no_grad():
+                src_w = self.bert.classifier.weight.data.clone()
+                src_b = self.bert.classifier.bias.data.clone()
+                for h in self.heads:
+                    h.weight.copy_(src_w)
+                    h.bias.copy_(src_b)
+            # The original BERT classifier is no longer used in forward,
+            # but we keep it (frozen) so .pooler_output handling stays unchanged.
+            for p in self.bert.classifier.parameters():
+                p.requires_grad_(False)
 
         self._lora_layers: List[LoRAMoELinear] = [
             m for m in self.bert.modules() if isinstance(m, LoRAMoELinear)
@@ -254,7 +276,15 @@ class FedLEASEFinBERT(nn.Module):
                 inputs_embeds=emb_out,
             )
             pooled = self.bert.dropout(bert_out.pooler_output)
-            logits = self.bert.classifier(pooled)  # [B, num_labels]
+
+            # Per-cluster heads: use the assigned cluster's head.
+            # This eliminates cross-cluster gradient conflict at the read-out
+            # layer (PhraseBank head learns 60/25/15, Twitter head learns its
+            # own distribution — no FedAvg blending).
+            if self.use_per_cluster_heads:
+                logits = self.heads[self.assigned_expert_idx](pooled)
+            else:
+                logits = self.bert.classifier(pooled)  # [B, num_labels]
         finally:
             self._clear_routing()
 
@@ -284,12 +314,17 @@ class FedLEASEFinBERT(nn.Module):
     # ------------------------------------------------------------------
 
     def set_trainable_expert(self, expert_idx: int) -> None:
-        """Freeze all experts except expert_idx; keep router trainable."""
+        """Freeze all experts except expert_idx; keep router + assigned head trainable."""
         self.assigned_expert_idx = expert_idx
         self.router.update_assigned_expert(expert_idx)
         for layer in self._lora_layers:
             layer.freeze_all_experts()
             layer.unfreeze_expert(expert_idx)
+        # Per-cluster heads: freeze all except the assigned cluster's head
+        if self.use_per_cluster_heads:
+            for i, h in enumerate(self.heads):
+                for p in h.parameters():
+                    p.requires_grad_(i == expert_idx)
 
     def get_expert_state(self, expert_idx: int) -> Dict[str, torch.Tensor]:
         """Return all A/B tensors for a given expert across all LoRA layers."""
@@ -321,6 +356,42 @@ class FedLEASEFinBERT(nn.Module):
     def set_router_state(self, state: Dict[str, torch.Tensor]) -> None:
         with torch.no_grad():
             self.router.gate.weight.copy_(state["gate.weight"])
+
+    # ------------------------------------------------------------------
+    # Per-cluster classifier-head access
+    # ------------------------------------------------------------------
+
+    def get_head_state(self, head_idx: int) -> Dict[str, torch.Tensor]:
+        """Return weight+bias for one cluster's classifier head."""
+        if not self.use_per_cluster_heads:
+            return {}
+        h = self.heads[head_idx]
+        return {
+            "weight": h.weight.data.clone(),
+            "bias":   h.bias.data.clone(),
+        }
+
+    def set_head_state(self, head_idx: int, state: Dict[str, torch.Tensor]) -> None:
+        if not self.use_per_cluster_heads or not state:
+            return
+        h = self.heads[head_idx]
+        with torch.no_grad():
+            if "weight" in state:
+                h.weight.copy_(state["weight"])
+            if "bias" in state:
+                h.bias.copy_(state["bias"])
+
+    def get_all_head_states(self) -> List[Dict[str, torch.Tensor]]:
+        if not self.use_per_cluster_heads:
+            return []
+        return [self.get_head_state(i) for i in range(self.n_experts)]
+
+    def set_all_head_states(self, states: List[Dict[str, torch.Tensor]]) -> None:
+        if not self.use_per_cluster_heads or not states:
+            return
+        for i, st in enumerate(states):
+            if st:
+                self.set_head_state(i, st)
 
     # ------------------------------------------------------------------
     # B-matrix extraction (for FedLEASE similarity computation in main phase)

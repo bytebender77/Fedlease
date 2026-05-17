@@ -361,11 +361,29 @@ def main() -> None:
     logger.info(f"Optimal experts (M): {pipeline.server.n_experts}")
 
     for dataset_name, metrics in results["final_metrics"].items():
+        if dataset_name.startswith("_"):
+            continue                          # skip the synthetic _headline entry
         agg = metrics.get("aggregate", {})
+        in_dom = metrics.get("in_domain", {})
+        cross = metrics.get("cross_domain", {})
         logger.info(
-            f"[{dataset_name}] mean_acc={agg.get('mean_accuracy', 0):.4f}  "
-            f"mean_macro_f1={agg.get('mean_macro_f1', 0):.4f}"
+            f"[{dataset_name}] "
+            f"all={agg.get('mean_accuracy', 0):.4f}/{agg.get('mean_macro_f1', 0):.4f}  "
+            f"| in-domain={in_dom.get('mean_accuracy', 0):.4f}/{in_dom.get('mean_macro_f1', 0):.4f}  "
+            f"| cross={cross.get('mean_accuracy', 0):.4f}/{cross.get('mean_macro_f1', 0):.4f}  "
+            f"(acc/F1)"
         )
+
+    # Headline summary (the number that goes in the paper)
+    headline = results["final_metrics"].get("_headline", {})
+    if headline:
+        logger.info("=" * 60)
+        logger.info(
+            f"HEADLINE (in-domain mean across both test sets): "
+            f"acc={headline['in_domain_mean_accuracy']:.4f}  "
+            f"macro_f1={headline['in_domain_mean_macro_f1']:.4f}"
+        )
+        logger.info("=" * 60)
 
     # Plots
     logger.info("Generating visualisation plots …")

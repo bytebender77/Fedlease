@@ -62,9 +62,10 @@ class FederatedServer:
         self.cluster_map: Dict[int, List[int]] = {}
         self.client_assignments: Dict[int, int] = {}  # client_id → expert_idx
 
-        # Expert and router states (M each)
+        # Expert, router, and per-cluster head states (M each)
         self.expert_states: List[Optional[Dict]] = []
         self.router_states: List[Optional[Dict]] = []
+        self.head_states:   List[Optional[Dict]] = []
 
         self.allocator = ExpertAllocator(
             min_clusters=config.clustering.min_clusters,
@@ -142,6 +143,9 @@ class FederatedServer:
         # Convert to per-expert state dicts (layer0.A, layer0.B etc.)
         self.expert_states = self._build_expert_states(expert_layer_params)
         self.router_states = [None] * optimal_k  # routers initialised on first round
+        self.head_states   = [None] * optimal_k  # populated after first round
+        # ↑ each cluster's head starts from the pretrained FinBERT classifier
+        # (inside the model __init__) and gets cluster-wise FedAvg'd thereafter.
 
         # Save distance matrix and cluster labels for visualisation
         np.save(os.path.join(self.output_dir, "distance_matrix.npy"), dist_matrix)
@@ -171,7 +175,8 @@ class FederatedServer:
         -------
         {
           'expert_states': List[Dict],    # M expert states
-          'router_state': Optional[Dict], # cluster-averaged router
+          'router_state':  Optional[Dict],# cluster-averaged router
+          'head_states':   List[Dict],    # M per-cluster classifier heads
           'assigned_expert_idx': int,
         }
         """
@@ -180,14 +185,15 @@ class FederatedServer:
 
         return {
             "expert_states": self.expert_states,
-            "router_state": router_for_client,
+            "router_state":  router_for_client,
+            "head_states":   self.head_states,
             "assigned_expert_idx": assigned,
             "n_experts": self.n_experts,
         }
 
     def aggregate_round(
         self,
-        client_uploads: List[Tuple[int, Dict, Dict]],
+        client_uploads: List[Tuple],
         dataset_sizes: Optional[Dict[int, int]] = None,
     ) -> None:
         """
@@ -195,11 +201,25 @@ class FederatedServer:
 
         Parameters
         ----------
-        client_uploads : List of (client_id, expert_state, router_state)
+        client_uploads : List of (client_id, expert_state, router_state[, head_state])
         dataset_sizes : optional {client_id: train_size}
         """
-        client_expert = [(cid, es) for cid, es, _ in client_uploads]
-        client_router = [(cid, rs) for cid, _, rs in client_uploads]
+        # Backwards-compatible unpacking — old code path was 3-tuple
+        def _unpack(u):
+            if len(u) == 4:
+                return u[0], u[1], u[2], u[3]
+            cid, es, rs = u
+            return cid, es, rs, {}
+
+        client_expert: List[Tuple[int, Dict]] = []
+        client_router: List[Tuple[int, Dict]] = []
+        client_head:   List[Tuple[int, Dict]] = []
+        for u in client_uploads:
+            cid, es, rs, hs = _unpack(u)
+            client_expert.append((cid, es))
+            client_router.append((cid, rs))
+            if hs:
+                client_head.append((cid, hs))
 
         new_exp, new_rot = cluster_wise_aggregation(
             client_expert,
@@ -216,21 +236,39 @@ class FederatedServer:
             if new_rot[e] is not None:
                 self.router_states[e] = new_rot[e]
 
+        # ----- Per-cluster head aggregation (cluster-wise FedAvg) -----
+        if client_head:
+            from federated.aggregation import aggregate_expert_states
+            head_dict: Dict[int, Dict] = {cid: hs for cid, hs in client_head}
+            for c in range(self.n_experts):
+                members = self.cluster_map.get(c, [])
+                active = [cid for cid in members if cid in head_dict]
+                if not active:
+                    continue
+                weights = (
+                    [float(dataset_sizes.get(cid, 1)) for cid in active]
+                    if dataset_sizes is not None else None
+                )
+                head_states = [head_dict[cid] for cid in active]
+                self.head_states[c] = aggregate_expert_states(head_states, weights)
+
         self.comm_stats["rounds"] += 1
         # Track bytes (rough estimate: count float32 parameters)
-        bytes_this_round = sum(
-            sum(v.numel() * 4 for v in es.values())
-            for _, es, _ in client_uploads
-        )
+        bytes_this_round = 0
+        for u in client_uploads:
+            _, es, _, hs = _unpack(u)
+            bytes_this_round += sum(v.numel() * 4 for v in es.values())
+            bytes_this_round += sum(v.numel() * 4 for v in hs.values())
         self.comm_stats["bytes_per_round"].append(bytes_this_round)
 
     def save_state(self, round_idx: int) -> str:
-        """Checkpoint all expert states to disk."""
+        """Checkpoint all expert + per-cluster head states to disk."""
         state = {
             "round": round_idx,
             "n_experts": self.n_experts,
             "expert_states": self.expert_states,
             "router_states": self.router_states,
+            "head_states":   self.head_states,
             "cluster_map": self.cluster_map,
             "client_assignments": self.client_assignments,
         }
@@ -248,6 +286,7 @@ class FederatedServer:
         self.n_experts = state["n_experts"]
         self.expert_states = state["expert_states"]
         self.router_states = state["router_states"]
+        self.head_states   = state.get("head_states", [None] * self.n_experts)
         self.cluster_map = state["cluster_map"]
         self.client_assignments = state["client_assignments"]
 

@@ -209,6 +209,7 @@ class FedLEASEPipeline:
                 expert_states=payload["expert_states"],
                 router_state=payload["router_state"],
                 assigned_expert_idx=payload["assigned_expert_idx"],
+                head_states=payload.get("head_states"),
             )
 
             # Configure router temperature + Gumbel mode for this round
@@ -248,24 +249,105 @@ class FedLEASEPipeline:
     # ------------------------------------------------------------------
 
     def _run_final_evaluation(self) -> Dict:
-        """Evaluate each client's model on held-out test sets."""
+        """Evaluate each client's model on held-out test sets.
+
+        Produces three aggregates per test set:
+          - "aggregate"        — naive mean across ALL clients (legacy)
+          - "in_domain"        — mean across only the clients whose source
+                                  matches the test set (the canonical FL
+                                  reporting protocol, and what should be
+                                  used in the headline table)
+          - "cross_domain"     — mean across clients whose source does NOT
+                                  match (zero-shot transfer metric)
+        """
         logger.info("--- Final Evaluation ---")
         results: Dict = {}
+
+        # Build {cid: source_tag} lookup ("phrasebank" / "twitter")
+        client_source = {
+            c["client_id"]: c.get("source", "unknown")
+            for c in self.client_data_list
+        }
+
+        # Map test-set name → matching source tag
+        # ("phrasebank_test" → "phrasebank", "twitter_test" → "twitter")
+        def _source_for_test(name: str) -> str:
+            for tag in ("phrasebank", "twitter"):
+                if tag in name.lower():
+                    return tag
+            return ""
 
         for name, test_loader in self.test_loaders.items():
             evaluator = Evaluator(test_loader, self.device)
             per_client: Dict = {}
 
             for cid, client in self.clients.items():
-                # Ensure client has a fully updated model (after last round)
                 if client.fedlease_model is None:
                     continue
                 metrics = evaluator.evaluate_model(client.fedlease_model)
+                metrics["source"] = client_source.get(cid, "unknown")
                 per_client[f"client_{cid}"] = metrics
 
-            agg = evaluator.aggregate_metrics(per_client) if per_client else {}
-            results[name] = {"per_client": per_client, "aggregate": agg}
-            logger.info(f"[{name}] mean_acc={agg.get('mean_accuracy', 0):.4f}")
+            agg_all = evaluator.aggregate_metrics(per_client) if per_client else {}
+
+            # Split per_client into in-domain and cross-domain subsets
+            target_src = _source_for_test(name)
+            in_domain_subset = {
+                k: v for k, v in per_client.items()
+                if v.get("source") == target_src
+            }
+            cross_domain_subset = {
+                k: v for k, v in per_client.items()
+                if v.get("source") and v.get("source") != target_src
+            }
+            agg_in = (
+                evaluator.aggregate_metrics(in_domain_subset)
+                if in_domain_subset else {}
+            )
+            agg_cross = (
+                evaluator.aggregate_metrics(cross_domain_subset)
+                if cross_domain_subset else {}
+            )
+
+            results[name] = {
+                "per_client":   per_client,
+                "aggregate":    agg_all,          # legacy — all clients
+                "in_domain":    agg_in,           # canonical metric
+                "cross_domain": agg_cross,        # zero-shot transfer
+            }
+
+            logger.info(
+                f"[{name}] in-domain mean_acc={agg_in.get('mean_accuracy', 0):.4f}  "
+                f"macro_f1={agg_in.get('mean_macro_f1', 0):.4f}  "
+                f"| cross-domain mean_acc={agg_cross.get('mean_accuracy', 0):.4f}  "
+                f"macro_f1={agg_cross.get('mean_macro_f1', 0):.4f}  "
+                f"| all mean_acc={agg_all.get('mean_accuracy', 0):.4f}"
+            )
+
+        # ---- Headline summary across BOTH test sets (in-domain only) ----
+        try:
+            in_dom_accs = [
+                results[name]["in_domain"].get("mean_accuracy", 0.0)
+                for name in results
+                if results[name]["in_domain"]
+            ]
+            in_dom_f1s = [
+                results[name]["in_domain"].get("mean_macro_f1", 0.0)
+                for name in results
+                if results[name]["in_domain"]
+            ]
+            if in_dom_accs:
+                results["_headline"] = {
+                    "in_domain_mean_accuracy": float(np.mean(in_dom_accs)),
+                    "in_domain_mean_macro_f1": float(np.mean(in_dom_f1s)),
+                }
+                logger.info(
+                    f"=== HEADLINE in-domain: "
+                    f"acc={results['_headline']['in_domain_mean_accuracy']:.4f}  "
+                    f"macro_f1={results['_headline']['in_domain_mean_macro_f1']:.4f} ==="
+                )
+        except Exception as exc:
+            logger.warning(f"Headline summary failed: {exc}")
 
         return results
 
