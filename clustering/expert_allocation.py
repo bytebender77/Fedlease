@@ -81,6 +81,18 @@ class ExpertAllocator:
         N = distance_matrix.shape[0]
         ids = client_ids if client_ids is not None else list(range(N))
 
+        # ── Special case: a single global expert (FedAvg-LoRA baseline)
+        if self.max_clusters <= 1:
+            optimal_k = 1
+            best_labels = np.zeros(N, dtype=int)
+            scores = {1: 0.0}    # silhouette undefined for k=1
+            cluster_map: Dict[int, List[int]] = {0: list(ids)}
+            self.optimal_k = optimal_k
+            self.silhouette_scores = scores
+            self.cluster_labels = best_labels
+            self.cluster_map = cluster_map
+            return optimal_k, best_labels, scores
+
         # Clamp max_clusters
         k_max = min(self.max_clusters, N - 1)
         k_min = max(self.min_clusters, 2)

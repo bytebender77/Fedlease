@@ -135,6 +135,11 @@ class FederatedClient:
         self.assigned_expert_idx = assigned_expert_idx
 
         if self.fedlease_model is None:
+            # Optionally disable per-cluster heads (FedAvg-LoRA baseline)
+            use_per_cluster_heads = bool(
+                getattr(getattr(self.config, "model", object()),
+                        "use_per_cluster_heads", True)
+            )
             self.fedlease_model = FedLEASEFinBERT(
                 model_name=self.model_name,
                 n_experts=n_experts,
@@ -143,6 +148,7 @@ class FederatedClient:
                 lora_dropout=self.lora_dropout,
                 num_labels=self.num_labels,
                 assigned_expert_idx=assigned_expert_idx,
+                use_per_cluster_heads=use_per_cluster_heads,
             ).to(self.device)
         else:
             self.fedlease_model.set_trainable_expert(assigned_expert_idx)
